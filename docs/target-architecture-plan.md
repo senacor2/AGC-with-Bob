@@ -226,7 +226,7 @@ agc-sim/
 
 ### Task 1 — Cargo-Workspace und Crate-Skelette aufsetzen
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Fundament legen. Alle drei Crates müssen kompilieren (leer), Workspace-Konfiguration ist korrekt, `agc-core` baut für Host und `thumbv7em-none-eabihf`.
 

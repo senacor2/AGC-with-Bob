@@ -1,0 +1,9 @@
+[package]
+name = "agc-sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+agc-core = { path = "../agc-core", features = ["sim"] }
+agc-physics = { path = "../agc-physics", features = ["std"] }
+# ratatui and crossterm are added when the TUI is implemented (Task 12).

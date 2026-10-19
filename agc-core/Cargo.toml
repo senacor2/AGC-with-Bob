@@ -1,0 +1,15 @@
+[package]
+name = "agc-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# The "sim" feature gate is reserved for host-only utilities (e.g. test
+# helpers).  No std-dependent code may be gated behind it in lib.rs.
+sim = []
+
+[dependencies]
+# cortex-m is added when the interrupt/scheduler layer is implemented (Task 5).
+
+[dev-dependencies]
+# nothing yet

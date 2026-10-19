@@ -1,0 +1,6 @@
+# Per-package build targets are set via `cargo build -p <crate> --target …`.
+# agc-core must always build for thumbv7em-none-eabihf (Cortex-M7, hard-float).
+# agc-sim and agc-physics build for the host by default.
+#
+# To verify the embedded build:
+#   cargo build --target thumbv7em-none-eabihf -p agc-core

@@ -1,0 +1,12 @@
+[package]
+name = "agc-physics"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# Enable std-dependent utilities (e.g. f64::sqrt via libm fallback is not
+# needed when std is available).  Core physics logic must work without this.
+std = []
+
+[dependencies]
+# libm is added when math functions are implemented (Task 10).
