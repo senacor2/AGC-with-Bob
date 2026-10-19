@@ -1,5 +1,7 @@
 # Comanche055 — Legacy-Architekturbeschreibung
 
+> **Hinweis zur Radar-Terminologie**: Der AGC-Quellcode verwendet das Wort „Radar" irreführend für das **VHF-Ranging** — eine Entfernungsmessung per VHF-Funklaufzeit zwischen CM und LM (aktiviert per V87/V88, `RANGERD`-Routine). Das CM besitzt **keinen** Rendezvous-Radar; dieser ist ausschließlich im LM (Luminary/Sundance) verbaut. Die optische Navigation (Sextant, `SXTMARK`) ist das primäre Navigationsinstrument des CM.
+
 > **Quelle**: `input/virtualagc/Comanche055/` und `input/Apollo-11/Comanche055/`  
 > **Programm**: Colossus 2A, Revision 055 — AGC-Firmware des Command Module, Apollo 11  
 > **Erstellt**: MIT im Auftrag der NASA, 1. April 1969 (NAS 9-4065)
