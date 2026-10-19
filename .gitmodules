@@ -1,3 +1,6 @@
 [submodule "input/Apollo-11"]
 	path = input/Apollo-11
 	url = https://github.com/chrislgarry/Apollo-11.git
+[submodule "input/virtualagc"]
+	path = input/virtualagc
+	url = https://github.com/virtualagc/virtualagc.git
