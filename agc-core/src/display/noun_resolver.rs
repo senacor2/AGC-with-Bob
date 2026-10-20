@@ -3,13 +3,23 @@
 //! Liest die physikalischen Werte aus dem [`GuidanceContext`] und skaliert
 //! sie für die DSKY-Anzeige. Nur mission-kritische Nouns sind implementiert.
 //!
-//! # Implementierungsstand (Sub-Task 2)
-//! Vollständig implementiert für Sub-Task 2 (Reentry-Nouns P0):
-//! - N60: GMAX, VPRED, GAMMAEI  (P61 Entry Prep)
-//! - N67: RTOGO, LAT, LONG      (P67 Terminal Phase)
+//! # Implementierungsstand (Sub-Task 4)
+//! Vollständig implementiert für alle Tier-1/Tier-2-Nouns:
 //!
-//! Alle übrigen Nouns geben `[Blank; 3]` zurück — sie werden in Sub-Task 4
-//! vervollständigt.
+//! | Noun | R1             | R2              | R3             | Programm     |
+//! |------|----------------|-----------------|----------------|--------------|
+//! | N40  | VG [m/s]       | TGO [s]         | —              | P40 Burn     |
+//! | N44  | HAPO [km]      | HPER [km]       | —              | P30/P37      |
+//! | N60  | GMAX [0.01 m/s²] | VPRED [m/s]   | GAMMAEI [0.01°]| P61 Entry    |
+//! | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1] | P61/P62 Ziel |
+//! | N63  | RTGO [km]      | VIO [m/s]       | TFE [s]        | P61 Guidance |
+//! | N66  | ROLLC [0.01°]  | XRNGERR [km]    | DNRNGERR [km]  | P64/P65      |
+//! | N67  | RTOGO [km]     | LAT [0.01°]     | LONG [0.01°]   | P67 Terminal |
+//! | N69  | ROLLC [0.01°]  | DL [0.01 m/s²]  | VL [m/s]       | P64 Monitor  |
+//! | N74  | ROLLC [0.01°]  | VI [m/s]        | D [0.01 m/s²]  | P64 Const-Drag |
+//! | N81  | DVx [m/s]      | DVy [m/s]       | DVz [m/s]      | P30 ΔV       |
+//!
+//! Alle übrigen Nouns geben `[Blank; 3]` zurück.
 //!
 //! # SI-Einheiten (Planregel)
 //! Alle Anzeigen erfolgen in SI-Einheiten (m, m/s, deg). Keine NM, keine ft/s.
@@ -70,15 +80,19 @@ fn g0_to_centimps2(g: f64) -> i32 {
 ///
 /// Beispiel: 0.1 rad → 573 (0.01°)
 ///
-/// Wird in Sub-Task 4 für N67 LAT/LON und weitere Nouns verwendet.
-#[expect(
-    dead_code,
-    reason = "wird in Sub-Task 4 (NounResolver-Erweiterung) genutzt"
-)]
+/// AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, SF-Konstante für Winkel.
 #[inline]
 fn rad_to_centideg(rad: f64) -> i32 {
     const RAD_TO_DEG: f64 = 180.0 / core::f64::consts::PI;
     deg_to_centideg(rad * RAD_TO_DEG)
+}
+
+/// Wandelt Sekunden in einen gerundeten `i32` um → für TGO/TFE-Anzeige.
+///
+/// Beispiel: 65.7 s → 66
+#[inline]
+fn s_to_display(s: f64) -> i32 {
+    libm::round(s) as i32
 }
 
 // ---------------------------------------------------------------------------
@@ -92,17 +106,70 @@ fn rad_to_centideg(rad: f64) -> i32 {
 ///
 /// # Einheiten der implementierten Nouns
 ///
-/// | Noun | R1             | R2             | R3           |
-/// |------|----------------|----------------|--------------|
-/// | N60  | GMAX [0.01 m/s²] | VPRED [m/s]  | GAMMAEI [0.01°] |
-/// | N67  | RTOGO [km]     | LAT [0.01°]    | LONG [0.01°] |
+/// | Noun | R1               | R2               | R3             |
+/// |------|------------------|------------------|----------------|
+/// | N40  | VG [m/s]         | TGO [s]          | — (Blank)      |
+/// | N44  | HAPO [km]        | HPER [km]        | — (Blank)      |
+/// | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°]|
+/// | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]   |
+/// | N63  | RTGO [km]        | VIO [m/s]        | TFE [s]        |
+/// | N66  | ROLLC [0.01°]    | XRNGERR [km]     | DNRNGERR [km]  |
+/// | N67  | RTOGO [km]       | LAT(ZIE) [0.01°] | LON(ZIE) [0.01°]|
+/// | N69  | ROLLC [0.01°]    | DL [0.01 m/s²]   | VL [m/s]       |
+/// | N74  | ROLLC [0.01°]    | VI [m/s]         | D [0.01 m/s²]  |
+/// | N81  | DVx [m/s]        | DVy [m/s]        | DVz [m/s]      |
 ///
 /// AGC source: `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, Noun-Liste.
 pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
     match noun.val() {
         // ------------------------------------------------------------------
+        // N40 — SPS-Burn Monitor: VG (Velocity-to-Gain), TGO (Time-to-Go)
+        // P40 SPS-Burn.
+        // R1 = VG = delta_v_target [m/s] (gewünschtes Δv, Anzeige des Ziels)
+        // R2 = TGO = t_burn − t_elapsed [s] (verbleibende Brennzeit)
+        // R3 = Blank (TIG wird separat über N33 angezeigt)
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N40 (VG/TGO/DELTAV).
+        // ------------------------------------------------------------------
+        40 => {
+            let Some(ref p40) = ctx.guidance.p40 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            let tgo = (p40.t_burn - p40.t_elapsed).max(0.0);
+            [
+                DisplayRegister::Decimal(mps_to_display(p40.delta_v_target)),
+                DisplayRegister::Decimal(s_to_display(tgo)),
+                DisplayRegister::Blank,
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N44 — Orbit-Parameter: HAPO, HPER
+        // P30 External ΔV Targeting / P37 Return-to-Earth.
+        // R1 = HAPO (Apogee-Höhe nach Burn) [km]
+        // R2 = HPER (Perigee-Höhe nach Burn) [km]
+        // R3 = Blank (TFF nicht in P30Output vorhanden)
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N44 (HAPO/HPER/TFF).
+        // ------------------------------------------------------------------
+        44 => {
+            let Some(ref p30) = ctx.guidance.p30 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            [
+                DisplayRegister::Decimal(m_to_km_display(p30.h_apo)),
+                DisplayRegister::Decimal(m_to_km_display(p30.h_per)),
+                DisplayRegister::Blank,
+            ]
+        }
+
+        // ------------------------------------------------------------------
         // N60 — Entry Display: GMAX, VPRED, GAMMAEI
         // P61 Entry Preparation.
+        // R1 = GMAX [0.01 m/s²]  (maximale Brems-G-Last)
+        // R2 = VPRED [m/s]       (vorhergesagte Geschwindigkeit bei EMS-Alt)
+        // R3 = GAMMAEI [0.01°]   (vorhergesagter Eintrittswinkel)
+        //
         // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N60.
         // ------------------------------------------------------------------
         60 => {
@@ -120,31 +187,173 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
         }
 
         // ------------------------------------------------------------------
-        // N67 — Terminal Phase: RTOGO, LAT, LONG
+        // N61 — Splashdown-Zielkoordinaten: LAT(SPL), LNG(SPL), HEADSUP
+        // P61/P62 Target-Eingabe und Anzeige.
+        // R1 = LAT(SPL) [0.01°]  (Ziel-Breitengrad, aus Crew-Eingabe V25)
+        // R2 = LNG(SPL) [0.01°]  (Ziel-Längengrad, aus Crew-Eingabe V25)
+        // R3 = HEADSUP [±1]      (+1 = Lift-Down / Heads-Up, −1 = Lift-Up)
+        //
+        // Die Koordinaten werden in `GuidanceContext.splashdown_lat/lon` als
+        // Radiant gespeichert und hier in 0.01° umgerechnet.
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N61.
+        // ------------------------------------------------------------------
+        61 => {
+            let headsup_display = if ctx.guidance.heads_up { 1 } else { -1 };
+            [
+                DisplayRegister::Decimal(rad_to_centideg(ctx.guidance.splashdown_lat)),
+                DisplayRegister::Decimal(rad_to_centideg(ctx.guidance.splashdown_lon)),
+                DisplayRegister::Decimal(headsup_display),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N63 — Entry Guidance Outputs: RTGO, VIO, TFE
+        // P61 Guidance-Ausgaben nach Entry-Berechnung.
+        // R1 = RTGO [km]   (Reichweite bis Splashdown ab EMS-Altitude)
+        // R2 = VIO [m/s]   (Inertialgeschwindigkeit bei EMS-Altitude)
+        // R3 = TFE [s]     (geschätzte Zeit bis EMS-Altitude)
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N63.
+        // ------------------------------------------------------------------
+        63 => {
+            let Some(ref p61) = ctx.guidance.p61 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            let Some(ref d) = p61.display else {
+                return [DisplayRegister::Blank; 3];
+            };
+            [
+                DisplayRegister::Decimal(m_to_km_display(d.rtgo_m)),
+                DisplayRegister::Decimal(mps_to_display(d.vio)),
+                DisplayRegister::Decimal(s_to_display(d.tte_s)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N66 — Guidance Errors: ROLLC, XRNGERR, DNRNGERR
+        // P64/P65 Guidance-Fehleranzeige.
+        // R1 = ROLLC [0.01°]    (Roll-Befehl)
+        // R2 = XRNGERR [km]     (Quer-Reichweitenfehler, positiv = rechts)
+        // R3 = DNRNGERR [km]    (Längs-Reichweitenfehler, positiv = zu weit)
+        //
+        // Liest aus P67State (enthält xrngerr_m/dnrngerr_m für P64/P67).
+        // Falls P64 aktiv, wird dessen Roll-Befehl verwendet.
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N66.
+        // ------------------------------------------------------------------
+        66 => {
+            // Quer- und Längs-Reichweitenfehler aus P67State
+            let Some(ref p67) = ctx.guidance.p67 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            // Roll-Befehl aus P64State falls vorhanden, sonst aus P67State
+            let rollc_deg = ctx
+                .guidance
+                .p64
+                .as_ref()
+                .map(|p| p.roll_cmd_deg)
+                .unwrap_or(p67.roll_cmd_deg);
+            [
+                DisplayRegister::Decimal(deg_to_centideg(rollc_deg)),
+                DisplayRegister::Decimal(m_to_km_display(p67.xrngerr_m)),
+                DisplayRegister::Decimal(m_to_km_display(p67.dnrngerr_m)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N67 — Terminal Phase: RTOGO, LAT(Ziel), LONG(Ziel)
         // P67 Terminal Phase.
+        // R1 = RTOGO [km]     (Gesamtentfernung zum Splashdown)
+        // R2 = LAT(ZIE) [0.01°] (Ziel-Breitengrad = splashdown_lat)
+        // R3 = LON(ZIE) [0.01°] (Ziel-Längengrad  = splashdown_lon)
+        //
+        // RTOGO wird aus dem geometrischen Gesamtfehler (xrngerr_m, dnrngerr_m)
+        // als Näherung berechnet. Zielkoordinaten kommen aus der Crew-Eingabe.
+        //
         // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N67.
         // ------------------------------------------------------------------
         67 => {
             let Some(ref p67) = ctx.guidance.p67 else {
                 return [DisplayRegister::Blank; 3];
             };
-            // RTOGO: Reichweite vom aktuellen Ort zum Splashdown.
-            // Im P67State wird xrngerr_m als Quer-Fehler und dnrngerr_m als Längs-Fehler
-            // gespeichert. Als Näherung für RTOGO nutzen wir den Gesamtfehler.
             let rtogo_m =
                 libm::sqrt(p67.xrngerr_m * p67.xrngerr_m + p67.dnrngerr_m * p67.dnrngerr_m);
-            // LAT/LONG: Roll-Befehl liegt in deg; P67State enthält keine separate Lat/Lon.
-            // Wir geben roll_cmd_deg für R2 aus und 0 für R3, bis P67 Lat/Lon speichert.
-            // (Vollständige Implementierung in Sub-Task 4.)
             [
                 DisplayRegister::Decimal(m_to_km_display(rtogo_m)),
-                DisplayRegister::Decimal(deg_to_centideg(p67.roll_cmd_deg)),
-                DisplayRegister::Decimal(0),
+                DisplayRegister::Decimal(rad_to_centideg(ctx.guidance.splashdown_lat)),
+                DisplayRegister::Decimal(rad_to_centideg(ctx.guidance.splashdown_lon)),
             ]
         }
 
         // ------------------------------------------------------------------
-        // Alle übrigen Nouns: noch nicht implementiert (Sub-Task 4).
+        // N69 — Constant-Drag Monitor: ROLLC, DL, VL
+        // P64 Constant-Drag Entry Phase Monitor.
+        // R1 = ROLLC [0.01°]   (Roll-Befehl aus P64)
+        // R2 = DL [0.01 m/s²]  (aktuelle Drag-G-Last in m/s²)
+        // R3 = VL [m/s]        (Relativgeschwindigkeit — nicht in P64State,
+        //                        wird als Blank ausgegeben bis P64 erweitert)
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N69 (BETA/DL/VL).
+        // ------------------------------------------------------------------
+        69 => {
+            let Some(ref p64) = ctx.guidance.p64 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            // DL: Drag in m/s² = drag_g_current × g₀, Anzeige in 0.01 m/s²
+            let dl_centimps2 = g0_to_centimps2(p64.drag_g_current);
+            [
+                DisplayRegister::Decimal(deg_to_centideg(p64.roll_cmd_deg)),
+                DisplayRegister::Decimal(dl_centimps2),
+                DisplayRegister::Blank, // VL fehlt in P64State (Sub-Task 5 / DAP)
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N74 — Constant-Drag Display: ROLLC, VI, D
+        // P64 Constant-Drag Entry Phase Haupt-Anzeige.
+        // R1 = ROLLC [0.01°]   (Roll-Befehl)
+        // R2 = VI [m/s]        (Inertialgeschwindigkeit — nicht in P64State,
+        //                        wird als Blank ausgegeben bis DAP bereitstellt)
+        // R3 = D [0.01 m/s²]   (Drag-Beschleunigung)
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N74 (ROLLC/VI/D).
+        // ------------------------------------------------------------------
+        74 => {
+            let Some(ref p64) = ctx.guidance.p64 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            let d_centimps2 = g0_to_centimps2(p64.drag_g_current);
+            [
+                DisplayRegister::Decimal(deg_to_centideg(p64.roll_cmd_deg)),
+                DisplayRegister::Blank, // VI (Inertialgeschwindigkeit) fehlt in P64State
+                DisplayRegister::Decimal(d_centimps2),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N81 — Δv-LV: DVx, DVy, DVz
+        // P30 External ΔV Targeting — Δv im ECI-System.
+        // R1 = DVx [m/s]
+        // R2 = DVy [m/s]
+        // R3 = DVz [m/s]
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N81 (DELVLVC).
+        // ------------------------------------------------------------------
+        81 => {
+            let Some(ref p30) = ctx.guidance.p30 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            let dv = p30.delta_v_ref;
+            [
+                DisplayRegister::Decimal(mps_to_display(dv.x)),
+                DisplayRegister::Decimal(mps_to_display(dv.y)),
+                DisplayRegister::Decimal(mps_to_display(dv.z)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // Alle übrigen Nouns: nicht implementiert.
         // ------------------------------------------------------------------
         _ => [DisplayRegister::Blank; 3],
     }
@@ -159,11 +368,113 @@ mod tests {
     use super::resolve;
     use crate::context::AgcContext;
     use crate::display::verb_noun::{DisplayRegister, NounCode};
-    use crate::guidance::p61_67::{EntryDisplayData, P61State, P67State};
+    use crate::guidance::p30_37::P30Output;
+    use crate::guidance::p40_47::P40State;
+    use crate::guidance::p61_67::{EntryDisplayData, P61State, P64State, P67State};
+    use crate::types::Vec3;
 
     fn noun(n: u8) -> NounCode {
         NounCode::new(n).unwrap()
     }
+
+    // -----------------------------------------------------------------------
+    // N40 — SPS-Burn Monitor
+    // -----------------------------------------------------------------------
+
+    /// N40 mit aktivem P40-State → VG und TGO korrekt skaliert.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N40.
+    #[test]
+    fn n40_resolves_from_p40_state() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p40 = Some(P40State {
+            phase: 3,
+            delta_v_target: 600.0, // 600 m/s VG
+            isp: 314.5,
+            thrust: 97_855.0,
+            mass: 28_000.0,
+            t_burn: 90.0,
+            t_elapsed: 25.0, // TGO = 65 s
+        });
+
+        let [r1, r2, r3] = resolve(noun(40), &ctx);
+
+        // R1 = VG in m/s: 600
+        assert_eq!(r1, DisplayRegister::Decimal(600));
+        // R2 = TGO in s: 90 − 25 = 65
+        assert_eq!(r2, DisplayRegister::Decimal(65));
+        // R3 = Blank
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N40 ohne aktiven P40-State → Blank.
+    #[test]
+    fn n40_blank_when_p40_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(40), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N40 wenn t_elapsed > t_burn → TGO klemmt auf 0 (kein negativer Wert).
+    #[test]
+    fn n40_tgo_clamps_to_zero_after_cutoff() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p40 = Some(P40State {
+            phase: 4,
+            delta_v_target: 300.0,
+            isp: 314.5,
+            thrust: 97_855.0,
+            mass: 28_000.0,
+            t_burn: 50.0,
+            t_elapsed: 55.0, // überschritten
+        });
+
+        let [_r1, r2, _r3] = resolve(noun(40), &ctx);
+        // TGO darf nicht negativ sein
+        assert_eq!(r2, DisplayRegister::Decimal(0));
+    }
+
+    // -----------------------------------------------------------------------
+    // N44 — Orbit-Parameter HAPO/HPER
+    // -----------------------------------------------------------------------
+
+    /// N44 mit bekannten P30-Werten → HAPO und HPER korrekt in km.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N44.
+    #[test]
+    fn n44_resolves_from_p30_output() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p30 = Some(P30Output {
+            delta_v_ref: Vec3::new(100.0, 0.0, 0.0),
+            h_apo: 400_000.0, // 400 km Apogee
+            h_per: 185_000.0, // 185 km Perigee
+        });
+
+        let [r1, r2, r3] = resolve(noun(44), &ctx);
+
+        // R1 = HAPO in km: 400
+        assert_eq!(r1, DisplayRegister::Decimal(400));
+        // R2 = HPER in km: 185
+        assert_eq!(r2, DisplayRegister::Decimal(185));
+        // R3 = Blank (TFF nicht in P30Output)
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N44 ohne P30-State → Blank.
+    #[test]
+    fn n44_blank_when_p30_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(44), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // N60 — Entry Display
+    // -----------------------------------------------------------------------
 
     /// N60 mit bekannten P61-Werten → korrekte Skalierung.
     ///
@@ -174,7 +485,7 @@ mod tests {
         ctx.guidance.p61 = Some(P61State {
             phase: 0,
             display: Some(EntryDisplayData {
-                gmax: 3.5,          // 3.5 g₀ × 9.80665 × 100 ≈ 343
+                gmax: 3.5,          // 3.5 g₀ × 9.80665 × 100 ≈ 3432
                 v_pred: 7_800.0,    // 7800 m/s → 7800
                 gamma_ei_deg: -6.5, // −6.5° → −650
                 rtgo_m: 500_000.0,
@@ -206,7 +517,7 @@ mod tests {
         assert_eq!(r3, DisplayRegister::Blank);
     }
 
-    /// N60 mit P61 ohne berechnetes Display (Phase 2 noch nicht abgeschlossen) → Blank.
+    /// N60 mit P61 ohne berechnetes Display → Blank.
     #[test]
     fn n60_blank_when_p61_display_none() {
         let mut ctx = AgcContext::default();
@@ -223,27 +534,188 @@ mod tests {
         assert_eq!(r3, DisplayRegister::Blank);
     }
 
-    /// N67 mit bekannten P67-Werten → R1 = RTOGO in km, R2 in centideg.
+    // -----------------------------------------------------------------------
+    // N61 — Splashdown-Zielkoordinaten
+    // -----------------------------------------------------------------------
+
+    /// N61 mit gesetzten Splashdown-Koordinaten → korrekte Umrechnung rad → 0.01°.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N61.
+    #[test]
+    fn n61_resolves_splashdown_target() {
+        let mut ctx = AgcContext::default();
+        // 15° Nord = 15 * π/180 rad
+        ctx.guidance.splashdown_lat = 15.0_f64.to_radians();
+        // 165° Ost (Pazifik) = 165 * π/180 rad
+        ctx.guidance.splashdown_lon = 165.0_f64.to_radians();
+        ctx.guidance.heads_up = true;
+
+        let [r1, r2, r3] = resolve(noun(61), &ctx);
+
+        // R1 = 15° in centideg: 1500 (±1 wg. Rundungsfehler)
+        if let DisplayRegister::Decimal(v) = r1 {
+            assert!((v - 1500).abs() <= 1, "LAT erwartet ~1500, got {v}");
+        } else {
+            panic!("R1 sollte Decimal sein");
+        }
+        // R2 = 165° in centideg: 16500 (±1)
+        if let DisplayRegister::Decimal(v) = r2 {
+            assert!((v - 16500).abs() <= 1, "LON erwartet ~16500, got {v}");
+        } else {
+            panic!("R2 sollte Decimal sein");
+        }
+        // R3 = HEADSUP = +1
+        assert_eq!(r3, DisplayRegister::Decimal(1));
+    }
+
+    /// N61 HEADSUP = false → R3 = −1.
+    #[test]
+    fn n61_headsup_false_gives_minus_one() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.heads_up = false;
+        let [_r1, _r2, r3] = resolve(noun(61), &ctx);
+        assert_eq!(r3, DisplayRegister::Decimal(-1));
+    }
+
+    // -----------------------------------------------------------------------
+    // N63 — Entry Guidance Outputs
+    // -----------------------------------------------------------------------
+
+    /// N63 mit bekannten P61-Display-Daten → RTGO, VIO, TFE korrekt.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N63.
+    #[test]
+    fn n63_resolves_from_p61_display() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p61 = Some(P61State {
+            phase: 0,
+            display: Some(EntryDisplayData {
+                gmax: 3.5,
+                v_pred: 7_800.0,
+                gamma_ei_deg: -6.5,
+                rtgo_m: 3_000_000.0, // 3000 km
+                vio: 10_500.0,       // 10 500 m/s
+                tte_s: 450.0,        // 450 s bis EMS-Alt
+            }),
+            lat_spl: 0.0,
+            lng_spl: 0.0,
+            heads_up: false,
+        });
+
+        let [r1, r2, r3] = resolve(noun(63), &ctx);
+
+        // R1 = RTGO in km: 3000
+        assert_eq!(r1, DisplayRegister::Decimal(3000));
+        // R2 = VIO in m/s: 10500
+        assert_eq!(r2, DisplayRegister::Decimal(10_500));
+        // R3 = TFE in s: 450
+        assert_eq!(r3, DisplayRegister::Decimal(450));
+    }
+
+    /// N63 ohne P61-State → Blank.
+    #[test]
+    fn n63_blank_when_p61_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(63), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // N66 — Guidance Errors (ROLLC/XRNGERR/DNRNGERR)
+    // -----------------------------------------------------------------------
+
+    /// N66 mit P67-State → Roll, Quer- und Längs-Fehler korrekt.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N66.
+    #[test]
+    fn n66_resolves_guidance_errors() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p67 = Some(P67State {
+            phase: 2,
+            xrngerr_m: 5_000.0,   // 5 km Quer-Fehler
+            dnrngerr_m: -2_000.0, // −2 km Längs-Fehler
+            roll_cmd_deg: 45.0,   // 45° → 4500 centideg
+        });
+
+        let [r1, r2, r3] = resolve(noun(66), &ctx);
+
+        // R1 = ROLLC in centideg: 4500
+        assert_eq!(r1, DisplayRegister::Decimal(4500));
+        // R2 = XRNGERR in km: 5
+        assert_eq!(r2, DisplayRegister::Decimal(5));
+        // R3 = DNRNGERR in km: −2
+        assert_eq!(r3, DisplayRegister::Decimal(-2));
+    }
+
+    /// N66 bevorzugt P64-Roll-Befehl wenn P64 aktiv.
+    #[test]
+    fn n66_uses_p64_roll_when_available() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p64 = Some(P64State {
+            phase: 2,
+            roll_cmd_deg: 30.0,
+            drag_g_current: 0.1,
+            gamma_at_05g_deg: -6.5,
+        });
+        ctx.guidance.p67 = Some(P67State {
+            phase: 2,
+            xrngerr_m: 1_000.0,
+            dnrngerr_m: 500.0,
+            roll_cmd_deg: 90.0, // ignoriert wenn P64 aktiv
+        });
+
+        let [r1, _r2, _r3] = resolve(noun(66), &ctx);
+        // Erwartet P64-Roll: 30° → 3000 centideg
+        assert_eq!(r1, DisplayRegister::Decimal(3000));
+    }
+
+    /// N66 ohne P67-State → Blank.
+    #[test]
+    fn n66_blank_when_p67_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(66), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // N67 — Terminal Phase
+    // -----------------------------------------------------------------------
+
+    /// N67 mit bekannten P67-Werten → R1 = RTOGO in km, R2/R3 = Zielkoordinaten.
     ///
     /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N67.
     #[test]
     fn n67_resolves_from_p67_state() {
         let mut ctx = AgcContext::default();
+        ctx.guidance.splashdown_lat = 10.0_f64.to_radians();
+        ctx.guidance.splashdown_lon = 170.0_f64.to_radians();
         ctx.guidance.p67 = Some(P67State {
             phase: 2,
-            xrngerr_m: 0.0,      // kein Quer-Fehler
+            xrngerr_m: 0.0,
             dnrngerr_m: 3_000.0, // 3 km Längs-Fehler → RTOGO ≈ 3 km
-            roll_cmd_deg: 12.5,  // 12.5° → 1250 in centideg
+            roll_cmd_deg: 12.5,
         });
 
         let [r1, r2, r3] = resolve(noun(67), &ctx);
 
         // R1 = RTOGO in km: sqrt(0² + 3000²) / 1000 = 3
         assert_eq!(r1, DisplayRegister::Decimal(3));
-        // R2 = roll_cmd_deg in centideg: 12.5 × 100 = 1250
-        assert_eq!(r2, DisplayRegister::Decimal(1250));
-        // R3 = 0 (Platzhalter bis Sub-Task 4)
-        assert_eq!(r3, DisplayRegister::Decimal(0));
+        // R2 = LAT in centideg: 10° → 1000 (±1)
+        if let DisplayRegister::Decimal(v) = r2 {
+            assert!((v - 1000).abs() <= 1, "LAT erwartet ~1000, got {v}");
+        } else {
+            panic!("R2 sollte Decimal sein");
+        }
+        // R3 = LON in centideg: 170° → 17000 (±1)
+        if let DisplayRegister::Decimal(v) = r3 {
+            assert!((v - 17000).abs() <= 1, "LON erwartet ~17000, got {v}");
+        } else {
+            panic!("R3 sollte Decimal sein");
+        }
     }
 
     /// N67 ohne aktiven P67-State → Blank.
@@ -255,6 +727,120 @@ mod tests {
         assert_eq!(r2, DisplayRegister::Blank);
         assert_eq!(r3, DisplayRegister::Blank);
     }
+
+    // -----------------------------------------------------------------------
+    // N69 — Constant-Drag Monitor
+    // -----------------------------------------------------------------------
+
+    /// N69 mit P64-State → ROLLC und DL korrekt; VL = Blank.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N69.
+    #[test]
+    fn n69_resolves_from_p64_state() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p64 = Some(P64State {
+            phase: 2,
+            roll_cmd_deg: 90.0,  // 90° → 9000 centideg
+            drag_g_current: 0.5, // 0.5 × 9.80665 × 100 = 490 centimps²
+            gamma_at_05g_deg: -6.5,
+        });
+
+        let [r1, r2, r3] = resolve(noun(69), &ctx);
+
+        // R1 = ROLLC in centideg: 9000
+        assert_eq!(r1, DisplayRegister::Decimal(9000));
+        // R2 = DL in 0.01 m/s²: 0.5 × 9.80665 × 100 = 490.3 → 490
+        assert_eq!(r2, DisplayRegister::Decimal(490));
+        // R3 = VL = Blank (nicht in P64State)
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N69 ohne P64-State → Blank.
+    #[test]
+    fn n69_blank_when_p64_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(69), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // N74 — Constant-Drag Display
+    // -----------------------------------------------------------------------
+
+    /// N74 mit P64-State → ROLLC und D korrekt; VI = Blank.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N74.
+    #[test]
+    fn n74_resolves_from_p64_state() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p64 = Some(P64State {
+            phase: 2,
+            roll_cmd_deg: 0.0,   // 0° → 0 centideg
+            drag_g_current: 0.1, // 0.1 × 9.80665 × 100 = 98.07 → 98
+            gamma_at_05g_deg: -6.0,
+        });
+
+        let [r1, r2, r3] = resolve(noun(74), &ctx);
+
+        // R1 = ROLLC in centideg: 0
+        assert_eq!(r1, DisplayRegister::Decimal(0));
+        // R2 = VI = Blank (nicht in P64State)
+        assert_eq!(r2, DisplayRegister::Blank);
+        // R3 = D in 0.01 m/s²: 0.1 × 9.80665 × 100 = 98.07 → 98
+        assert_eq!(r3, DisplayRegister::Decimal(98));
+    }
+
+    /// N74 ohne P64-State → Blank.
+    #[test]
+    fn n74_blank_when_p64_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(74), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // N81 — Δv-LV (ECI-Komponenten)
+    // -----------------------------------------------------------------------
+
+    /// N81 mit bekannten P30-Daten → DVx, DVy, DVz korrekt in m/s.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N81.
+    #[test]
+    fn n81_resolves_delta_v_from_p30() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p30 = Some(P30Output {
+            delta_v_ref: Vec3::new(120.5, -45.0, 8.7),
+            h_apo: 400_000.0,
+            h_per: 185_000.0,
+        });
+
+        let [r1, r2, r3] = resolve(noun(81), &ctx);
+
+        // R1 = DVx: round(120.5) = 121
+        assert_eq!(r1, DisplayRegister::Decimal(121));
+        // R2 = DVy: round(−45.0) = −45
+        assert_eq!(r2, DisplayRegister::Decimal(-45));
+        // R3 = DVz: round(8.7) = 9
+        assert_eq!(r3, DisplayRegister::Decimal(9));
+    }
+
+    /// N81 ohne P30-State → Blank.
+    #[test]
+    fn n81_blank_when_p30_inactive() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(81), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // Allgemein
+    // -----------------------------------------------------------------------
 
     /// Unbekannter Noun → Blank.
     #[test]

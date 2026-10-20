@@ -198,7 +198,7 @@ Sowie V33 (Proceed), V34 (Terminate), V32 (Recycle) als Crew-Antworten auf VERB/
 
 ## Sub-Task 4 — `NounResolver`: Priorität P0 (Reentry N60–N69, N74)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Der Noun-Resolver liest die physikalischen Werte aus dem `GuidanceContext`
 und befüllt `DisplayState.r1/r2/r3` mit skalierten Dezimalwerten. Priorität haben die
