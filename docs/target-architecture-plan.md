@@ -525,7 +525,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 9 — Digitale Autopiloten (DAP)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: TVC-DAP, RCS-DAP und Jet Selection Logic implementieren.
 
