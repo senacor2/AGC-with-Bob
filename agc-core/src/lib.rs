@@ -10,3 +10,5 @@
 //! - No `static mut`: use `cortex_m::interrupt::Mutex<RefCell<T>>`.
 //! - No blocking in interrupt handlers or Waitlist tasks.
 //! - `panic = "abort"`: every panic triggers GOJAM (hardware restart).
+
+pub mod hal;

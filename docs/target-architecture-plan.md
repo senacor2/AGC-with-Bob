@@ -253,7 +253,7 @@ agc-sim/
 
 ### Task 2 — HAL-Trait-Definitionen in agc-core
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Die Hardware-Abstraktionsschicht als Trait-Grenzen definieren. Alle Guidance-Programme und DAP-Code referenzieren ausschließlich diese Traits — nie konkrete Hardware.
 
