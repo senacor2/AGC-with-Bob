@@ -546,7 +546,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 10 — agc-physics: Physikalisches Simulationsmodell
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Trajectory-Propagation, IMU-Modell, Radar-Modell und Aerodynamik als eigenständiges, no_std-kompatibles Crate. Wiederverwendbar für spätere Hardware-in-the-Loop-Tests.
 

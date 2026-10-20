@@ -9,4 +9,4 @@ edition = "2021"
 std = []
 
 [dependencies]
-# libm is added when math functions are implemented (Task 10).
+libm = { version = "0.2", default-features = false }
