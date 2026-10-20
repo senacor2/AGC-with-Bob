@@ -28,7 +28,7 @@ In Rust wird P53 als Typ-Alias auf dieselbe Funktion abgebildet.
 
 ## Sub-Task 1 — `navigation::alignment` erweitern
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Die vorhandene `alignment.rs` besitzt nur `triad_align()`. Für P51/P52
 werden drei weitere Hilfsfunktionen benötigt, die CDU-Winkel verarbeiten und
@@ -65,7 +65,7 @@ Sternwinkel-Plausibilität prüfen.
 
 ## Sub-Task 2 — `guidance::p51_53` implementieren
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: P51 führt das vollständige Alignment durch: zwei Sternbeobachtungen
 → TRIAD → REFSMMAT. P52 berechnet die Zielorientierung aus Positions-/
@@ -108,7 +108,7 @@ Geschwindigkeitsvektor. P53 ist identisch mit P51.
 
 ## Sub-Task 3 — Unit-Tests
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Alignment-Korrektheit mit synthetischen Sternmessungen verifizieren.
 
@@ -138,7 +138,7 @@ Geschwindigkeitsvektor. P53 ist identisch mit P51.
 
 ## Sub-Task 4 — Integration, Plan-Update & Git-Commit
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Abschlussvalidierung, Plan-Status aktualisieren, Commit erstellen.
 
