@@ -318,7 +318,7 @@ agc-sim/
 
 ### Task 5 — Executive & Waitlist
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Den kooperativen Scheduler implementieren. Alle Guidance-Programme laufen als Jobs unter dem Executive.
 
