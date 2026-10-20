@@ -14,6 +14,7 @@
 pub mod alarm;
 pub mod display;
 pub mod executive;
+pub mod guidance;
 pub mod hal;
 pub mod navigation;
 pub mod restart;
