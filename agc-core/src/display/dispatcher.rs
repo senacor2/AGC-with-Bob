@@ -8,15 +8,17 @@
 //! - Sub-Task 2: V06 (Decimal Display, einmalig) und V16 (Monitor Display, zyklisch).
 //! - Sub-Task 3: V37 (Change Program), V25/N61 (Load 3 Komponenten),
 //!   V33 (Proceed), V34 (Terminate), V32 (Recycle).
+//! - Sub-Task 5: V41 (Coarse Align), V42 (Fine Align IMU).
 //!
 //! # Hinweis zum NounResolver
 //! `dispatch()` delegiert die Datenbeschaffung an [`super::noun_resolver`]
-//! (Sub-Task 4). Solange dieser noch nicht vollständig implementiert ist,
+//! (Sub-Task 4/5). Solange dieser noch nicht vollständig implementiert ist,
 //! liefert der Resolver für unbekannte Nouns `[DisplayRegister::Blank; 3]`.
 //!
 //! AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, VERBFAN/VERBTAB.
+//! AGC source: `Comanche055/EXTENDED_VERBS.agc`, LST2FAN / VBCOARK / IMUFINEK.
 
-use crate::context::AgcContext;
+use crate::context::{AgcContext, AlignmentCommand};
 use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, NounCode, VerbCode};
 
@@ -72,6 +74,22 @@ pub enum VerbAction {
     /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, RSETKEY.
     Recycle,
 
+    /// Coarse Align IMU (V41 — VBCOARK).
+    ///
+    /// Setzt `guidance.alignment_cmd = CoarseAlign`. P51/P52 liest dieses Flag
+    /// und führt IMUCOARK durch.
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK label.
+    CoarseAlign,
+
+    /// Fine Align IMU (V42 — IMUFINEK).
+    ///
+    /// Setzt `guidance.alignment_cmd = FineAlign`. P51/P52 liest dieses Flag
+    /// und führt IMUFINE durch (Gyro-Torquing).
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, IMUFINEK label.
+    FineAlign,
+
     /// Verb ist nicht implementiert oder nicht relevant (Spare / Illegal).
     ///
     /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, GODSPALM label.
@@ -112,6 +130,32 @@ const VERB_TABLE: [VerbAction; 40] = {
     // (Programm-Nummer wird zur Dispatch-Zeit aus dem Noun gelesen)
     // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MMCHANG label.
     t[37] = VerbAction::Noop; // Platzhalter; dispatch() erkennt V37 gesondert
+    t
+};
+
+// ---------------------------------------------------------------------------
+// Statische Extended-Verb-Tabelle V40–V45 (LST2FAN)
+// ---------------------------------------------------------------------------
+
+/// Statische Dispatch-Tabelle für Extended Verbs V40–V45.
+///
+/// Index ist relativ: Index 0 = V40, Index 1 = V41, Index 2 = V42 usw.
+/// Nur die für IMU-Alignment (P51/P52) relevanten Extended Verbs sind eingetragen.
+///
+/// AGC source: `Comanche055/EXTENDED_VERBS.agc`, LST2FAN (zweite Verb-Fan-Tabelle).
+const EXT_VERB_BASE: usize = 40;
+const EXT_VERB_TABLE: [VerbAction; 6] = {
+    let mut t = [VerbAction::Noop; 6];
+    // VB40: VBZERO — Zero IMU CDUs (nicht implementiert, nur Platzhalter)
+    // AGC source: EXTENDED_VERBS.agc, VBZERO label.
+    t[0] = VerbAction::Noop; // V40
+                             // VB41: VBCOARK — Coarse Align IMU (mit N20)
+                             // AGC source: EXTENDED_VERBS.agc, VBCOARK / IMUCOARK label.
+    t[1] = VerbAction::CoarseAlign; // V41
+                                    // VB42: IMUFINEK — Fine Align IMU (Gyro-Torquing)
+                                    // AGC source: EXTENDED_VERBS.agc, IMUFINEK / IMUFINE label.
+    t[2] = VerbAction::FineAlign; // V42
+                                  // VB43–VB45: Spare / nicht implementiert
     t
 };
 
@@ -299,9 +343,11 @@ impl VerbDispatcher {
             return;
         }
 
-        // Tabellen-Lookup: Verb-Codes ≥ 40 → Noop (Extended Verbs folgen in Sub-Task 5)
+        // Tabellen-Lookup: V00–V39 oder Extended Verbs V40–V45
         let action = if v < VERB_TABLE.len() {
             VERB_TABLE[v]
+        } else if v >= EXT_VERB_BASE && v < EXT_VERB_BASE + EXT_VERB_TABLE.len() {
+            EXT_VERB_TABLE[v - EXT_VERB_BASE]
         } else {
             VerbAction::Noop
         };
@@ -360,6 +406,31 @@ impl VerbDispatcher {
             // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, RSETKEY.
             VerbAction::Recycle => {
                 ctx.guidance.recycle_flag = true;
+            }
+
+            // V41: Coarse Align IMU
+            // AGC source: EXTENDED_VERBS.agc, VBCOARK / IMUCOARK label.
+            VerbAction::CoarseAlign => {
+                ctx.guidance.alignment_cmd = Some(AlignmentCommand::CoarseAlign);
+                // V41 benötigt N20 (ICDU Angles): einmalige Anzeige der Ziel-Winkel
+                // Blinken stoppen — kein Eingabe-Prompt bei Coarse Align
+                ctx.display.flash_state = false;
+                ctx.display.flash_counter = 0;
+                ctx.display.lights.verb_noun_flash = false;
+                let [r1, r2, r3] = noun_resolver::resolve(noun, ctx);
+                ctx.display.r1 = r1;
+                ctx.display.r2 = r2;
+                ctx.display.r3 = r3;
+            }
+
+            // V42: Fine Align IMU
+            // AGC source: EXTENDED_VERBS.agc, IMUFINEK / IMUFINE label.
+            VerbAction::FineAlign => {
+                ctx.guidance.alignment_cmd = Some(AlignmentCommand::FineAlign);
+                // Fine Align: kein Noun-Display nötig, Flash stoppen
+                ctx.display.flash_state = false;
+                ctx.display.flash_counter = 0;
+                ctx.display.lights.verb_noun_flash = false;
             }
 
             VerbAction::ProgramChange(_) | VerbAction::Noop => {}
@@ -772,5 +843,142 @@ mod tests {
         assert!(ctx.guidance.recycle_flag, "recycle_flag muss true sein");
         assert!(!ctx.guidance.proceed_flag, "proceed_flag bleibt false");
         assert!(!ctx.guidance.terminate_flag, "terminate_flag bleibt false");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 13 (Sub-Task 5): V41/N20 → alignment_cmd = CoarseAlign, Flash aus
+    //
+    // Sequenz: VERB 41 ENTER NOUN 20 → Coarse Align Befehl gesetzt.
+    // AGC source: EXTENDED_VERBS.agc, VBCOARK / IMUCOARK.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn v41n20_sets_coarse_align_cmd() {
+        use crate::context::AlignmentCommand;
+
+        let mut ctx = AgcContext::default();
+
+        // Verb/Noun setzen
+        VerbDispatcher::dispatch(verb(41), noun(20), &mut ctx);
+
+        // alignment_cmd = CoarseAlign
+        assert_eq!(
+            ctx.guidance.alignment_cmd,
+            Some(AlignmentCommand::CoarseAlign),
+            "alignment_cmd muss CoarseAlign sein nach V41"
+        );
+
+        // Flash aus (Coarse Align braucht keinen Eingabe-Prompt)
+        assert!(
+            !ctx.display.flash_state,
+            "flash_state muss false sein nach V41"
+        );
+        assert!(
+            !ctx.display.lights.verb_noun_flash,
+            "VERB/NOUN FLASH aus nach V41"
+        );
+
+        // Verb/Noun im Display gesetzt
+        assert_eq!(ctx.display.verb, verb(41), "Verb im Display muss 41 sein");
+        assert_eq!(ctx.display.noun, noun(20), "Noun im Display muss 20 sein");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 14 (Sub-Task 5): V42 → alignment_cmd = FineAlign, Flash aus
+    //
+    // Sequenz: VERB 42 ENTER → Fine Align Befehl gesetzt.
+    // AGC source: EXTENDED_VERBS.agc, IMUFINEK / IMUFINE.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn v42_sets_fine_align_cmd() {
+        use crate::context::AlignmentCommand;
+
+        let mut ctx = AgcContext::default();
+
+        VerbDispatcher::dispatch(verb(42), noun(0), &mut ctx);
+
+        // alignment_cmd = FineAlign
+        assert_eq!(
+            ctx.guidance.alignment_cmd,
+            Some(AlignmentCommand::FineAlign),
+            "alignment_cmd muss FineAlign sein nach V42"
+        );
+
+        // Flash aus
+        assert!(
+            !ctx.display.flash_state,
+            "flash_state muss false sein nach V42"
+        );
+        assert!(
+            !ctx.display.lights.verb_noun_flash,
+            "VERB/NOUN FLASH aus nach V42"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 15 (Sub-Task 5): V41 überschreibt vorherigen alignment_cmd
+    //
+    // Sicherheitstest: nach FineAlign kann CoarseAlign gesetzt werden.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn v41_overwrites_previous_alignment_cmd() {
+        use crate::context::AlignmentCommand;
+
+        let mut ctx = AgcContext::default();
+
+        // Zuerst V42 (FineAlign)
+        VerbDispatcher::dispatch(verb(42), noun(0), &mut ctx);
+        assert_eq!(
+            ctx.guidance.alignment_cmd,
+            Some(AlignmentCommand::FineAlign)
+        );
+
+        // Dann V41 (CoarseAlign) — muss FineAlign überschreiben
+        VerbDispatcher::dispatch(verb(41), noun(20), &mut ctx);
+        assert_eq!(
+            ctx.guidance.alignment_cmd,
+            Some(AlignmentCommand::CoarseAlign),
+            "CoarseAlign muss FineAlign überschreiben"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 16 (Sub-Task 5): V41N20 mit gesetztem thetad → R-Register befüllt
+    //
+    // Wenn thetad gesetzt ist, zeigt V41/N20 die CDU-Winkel an.
+    // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N20.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn v41n20_displays_thetad_if_set() {
+        use crate::display::verb_noun::DisplayRegister;
+
+        let mut ctx = AgcContext::default();
+
+        // Ziel-Gimbal-Winkel setzen (OGA=30°, MGA=−45°, IGA=10°)
+        let oga_rad = 30.0_f64.to_radians();
+        let mga_rad = (-45.0_f64).to_radians();
+        let iga_rad = 10.0_f64.to_radians();
+        ctx.guidance.thetad = [oga_rad, mga_rad, iga_rad];
+
+        VerbDispatcher::dispatch(verb(41), noun(20), &mut ctx);
+
+        // R1 = OGA ≈ 3000 (0.01°)
+        if let DisplayRegister::Decimal(r1) = ctx.display.r1 {
+            assert!(
+                r1 > 2900 && r1 < 3100,
+                "R1 (OGA) erwartet ~3000 (0.01°), got {r1}"
+            );
+        } else {
+            panic!("R1 muss Decimal sein, got {:?}", ctx.display.r1);
+        }
+
+        // R2 = MGA ≈ −4500 (0.01°)
+        if let DisplayRegister::Decimal(r2) = ctx.display.r2 {
+            assert!(
+                r2 > -4600 && r2 < -4400,
+                "R2 (MGA) erwartet ~−4500 (0.01°), got {r2}"
+            );
+        } else {
+            panic!("R2 muss Decimal sein, got {:?}", ctx.display.r2);
+        }
     }
 }

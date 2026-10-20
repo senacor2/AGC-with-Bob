@@ -18,6 +18,30 @@ use crate::guidance::p61_67::{P61State, P64State, P67State};
 use crate::restart::phase_table::PhaseTable;
 
 // ---------------------------------------------------------------------------
+// AlignmentCommand
+// ---------------------------------------------------------------------------
+
+/// IMU-Alignment-Befehl — gesetzt von V41 (Coarse Align) oder V42 (Fine Align).
+///
+/// Entspricht dem AGC-VBCOARK (V41) / IMUFINEK (V42)-Mechanismus. Die
+/// P51/P52-Programme prüfen dieses Feld und führen den jeweiligen
+/// Alignment-Schritt durch.
+///
+/// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK (V41) / IMUFINEK (V42).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AlignmentCommand {
+    /// V41 — Coarse Align IMU. Setzt die IMU-Gimbals grob auf THETAD-Winkel.
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK / IMUCOARK.
+    CoarseAlign,
+
+    /// V42 — Fine Align IMU. Erzeugt Gyro-Torquing-Pulse aus THETAD-Differenz.
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, IMUFINEK / IMUFINE.
+    FineAlign,
+}
+
+// ---------------------------------------------------------------------------
 // GuidanceContext
 // ---------------------------------------------------------------------------
 
@@ -99,6 +123,22 @@ pub struct GuidanceContext {
     /// AGC-Quelle: `Comanche055/P51-P53.agc`, P51CALL.
     pub p51: Option<P51State>,
 
+    /// Ausstehender IMU-Alignment-Befehl von V41 (Coarse Align) oder V42 (Fine Align).
+    ///
+    /// Wird vom Dispatcher gesetzt und von P51/P52 konsumiert (auf `None` zurückgesetzt
+    /// wenn verarbeitet).
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK / IMUFINEK.
+    pub alignment_cmd: Option<AlignmentCommand>,
+
+    /// Ziel-Gimbal-Winkel für Coarse/Fine Align [rad] — THETAD (OGA, MGA, IGA).
+    ///
+    /// Werden von V41/V42 aus dem `DisplayState` (R1/R2/R3 nach V25/N22-Eingabe) übernommen
+    /// oder direkt vom P52-Programm gesetzt.
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK (THETAD reference).
+    pub thetad: [f64; 3],
+
     // -----------------------------------------------------------------------
     // Programmzustände — Reentry (P61, P64, P67)
     // -----------------------------------------------------------------------
@@ -131,6 +171,8 @@ impl Default for GuidanceContext {
             p41: None,
             p47: None,
             p51: None,
+            alignment_cmd: None,
+            thetad: [0.0; 3],
             p61: None,
             p64: None,
             p67: None,

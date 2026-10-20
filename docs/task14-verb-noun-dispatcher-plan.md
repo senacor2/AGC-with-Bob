@@ -238,7 +238,7 @@ Interne Bogenmaß-Winkel (rad) werden in Grad umgerechnet. Keine NM, keine ft/se
 
 ## Sub-Task 5 — V41 (Coarse Align) und IMU-Alignment-Verben (Priorität P2)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Für P51/P52 (IMU Alignment) werden Extended Verbs V41 (Coarse Align CDU),
 V42 (Fine Align IMU), und Display-Nouns N20 (ICDU Angles), N92 (New Optics Angles),

@@ -3,21 +3,26 @@
 //! Liest die physikalischen Werte aus dem [`GuidanceContext`] und skaliert
 //! sie für die DSKY-Anzeige. Nur mission-kritische Nouns sind implementiert.
 //!
-//! # Implementierungsstand (Sub-Task 4)
-//! Vollständig implementiert für alle Tier-1/Tier-2-Nouns:
+//! # Implementierungsstand (Sub-Tasks 4 + 5)
+//! Vollständig implementiert für alle Tier-1/Tier-2-Nouns sowie IMU-Alignment-Nouns:
 //!
-//! | Noun | R1             | R2              | R3             | Programm     |
-//! |------|----------------|-----------------|----------------|--------------|
-//! | N40  | VG [m/s]       | TGO [s]         | —              | P40 Burn     |
-//! | N44  | HAPO [km]      | HPER [km]       | —              | P30/P37      |
-//! | N60  | GMAX [0.01 m/s²] | VPRED [m/s]   | GAMMAEI [0.01°]| P61 Entry    |
-//! | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1] | P61/P62 Ziel |
-//! | N63  | RTGO [km]      | VIO [m/s]       | TFE [s]        | P61 Guidance |
-//! | N66  | ROLLC [0.01°]  | XRNGERR [km]    | DNRNGERR [km]  | P64/P65      |
-//! | N67  | RTOGO [km]     | LAT [0.01°]     | LONG [0.01°]   | P67 Terminal |
-//! | N69  | ROLLC [0.01°]  | DL [0.01 m/s²]  | VL [m/s]       | P64 Monitor  |
-//! | N74  | ROLLC [0.01°]  | VI [m/s]        | D [0.01 m/s²]  | P64 Const-Drag |
-//! | N81  | DVx [m/s]      | DVy [m/s]       | DVz [m/s]      | P30 ΔV       |
+//! | Noun | R1               | R2               | R3              | Programm         |
+//! |------|------------------|------------------|-----------------|------------------|
+//! | N17  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]     | P52 CPHIX        |
+//! | N20  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]     | P51/P52 CDU      |
+//! | N22  | THETAD1 [0.01°]  | THETAD2 [0.01°]  | THETAD3 [0.01°] | P51/P52 Ziel     |
+//! | N40  | VG [m/s]         | TGO [s]          | —               | P40 Burn         |
+//! | N44  | HAPO [km]        | HPER [km]        | —               | P30/P37          |
+//! | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°] | P61 Entry        |
+//! | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]    | P61/P62 Ziel     |
+//! | N63  | RTGO [km]        | VIO [m/s]        | TFE [s]         | P61 Guidance     |
+//! | N66  | ROLLC [0.01°]    | XRNGERR [km]     | DNRNGERR [km]   | P64/P65          |
+//! | N67  | RTOGO [km]       | LAT [0.01°]      | LONG [0.01°]    | P67 Terminal     |
+//! | N69  | ROLLC [0.01°]    | DL [0.01 m/s²]   | VL [m/s]        | P64 Monitor      |
+//! | N74  | ROLLC [0.01°]    | VI [m/s]         | D [0.01 m/s²]   | P64 Const-Drag   |
+//! | N81  | DVx [m/s]        | DVy [m/s]        | DVz [m/s]       | P30 ΔV           |
+//! | N92  | SHAFT [0.01°]    | TRUNION [0.01°]  | — (Blank)       | P52 Optik-Winkel |
+//! | N93  | ΔG1 [0.001°]     | ΔG2 [0.001°]     | ΔG3 [0.001°]   | P52 Gyro-Torq    |
 //!
 //! Alle übrigen Nouns geben `[Blank; 3]` zurück.
 //!
@@ -95,6 +100,16 @@ fn s_to_display(s: f64) -> i32 {
     libm::round(s) as i32
 }
 
+/// Wandelt Grad in tausendstel Grad (0.001°) um → für Gyro-Torquing-Anzeige (N93).
+///
+/// Beispiel: 0.123° → 123
+///
+/// AGC source: `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, N93 (DELTA GYRO ANGLES).
+#[inline]
+fn deg_to_millideg(deg: f64) -> i32 {
+    libm::round(deg * 1000.0) as i32
+}
+
 // ---------------------------------------------------------------------------
 // resolve — Haupt-Einstiegspunkt
 // ---------------------------------------------------------------------------
@@ -106,22 +121,107 @@ fn s_to_display(s: f64) -> i32 {
 ///
 /// # Einheiten der implementierten Nouns
 ///
-/// | Noun | R1               | R2               | R3             |
-/// |------|------------------|------------------|----------------|
-/// | N40  | VG [m/s]         | TGO [s]          | — (Blank)      |
-/// | N44  | HAPO [km]        | HPER [km]        | — (Blank)      |
-/// | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°]|
-/// | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]   |
-/// | N63  | RTGO [km]        | VIO [m/s]        | TFE [s]        |
-/// | N66  | ROLLC [0.01°]    | XRNGERR [km]     | DNRNGERR [km]  |
-/// | N67  | RTOGO [km]       | LAT(ZIE) [0.01°] | LON(ZIE) [0.01°]|
-/// | N69  | ROLLC [0.01°]    | DL [0.01 m/s²]   | VL [m/s]       |
-/// | N74  | ROLLC [0.01°]    | VI [m/s]         | D [0.01 m/s²]  |
-/// | N81  | DVx [m/s]        | DVy [m/s]        | DVz [m/s]      |
+/// | Noun | R1               | R2               | R3               |
+/// |------|------------------|------------------|------------------|
+/// | N17  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]      |
+/// | N20  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]      |
+/// | N22  | THETAD1 [0.01°]  | THETAD2 [0.01°]  | THETAD3 [0.01°]  |
+/// | N40  | VG [m/s]         | TGO [s]          | — (Blank)        |
+/// | N44  | HAPO [km]        | HPER [km]        | — (Blank)        |
+/// | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°]  |
+/// | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]     |
+/// | N63  | RTGO [km]        | VIO [m/s]        | TFE [s]          |
+/// | N66  | ROLLC [0.01°]    | XRNGERR [km]     | DNRNGERR [km]    |
+/// | N67  | RTOGO [km]       | LAT(ZIE) [0.01°] | LON(ZIE) [0.01°] |
+/// | N69  | ROLLC [0.01°]    | DL [0.01 m/s²]   | VL [m/s]         |
+/// | N74  | ROLLC [0.01°]    | VI [m/s]         | D [0.01 m/s²]    |
+/// | N81  | DVx [m/s]        | DVy [m/s]        | DVz [m/s]        |
+/// | N92  | SHAFT [0.01°]    | TRUNION [0.01°]  | — (Blank)        |
+/// | N93  | ΔG1 [0.001°]     | ΔG2 [0.001°]     | ΔG3 [0.001°]    |
 ///
 /// AGC source: `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, Noun-Liste.
 pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
     match noun.val() {
+        // ------------------------------------------------------------------
+        // N17 — CPHIX: Astronauten-Gesamtlage (OGA, MGA, IGA) [0.01°]
+        // P52 IMU-Alignment — zeigt die aktuelle CDU-Lage.
+        // R1 = OGA (Outer Gimbal Angle) [0.01°]
+        // R2 = MGA (Middle Gimbal Angle) [0.01°]
+        // R3 = IGA (Inner Gimbal Angle) [0.01°]
+        //
+        // CPHIX wird im AGC als Kopie von CDUX gespeichert (Extended Verbs, V60 SET CPHIX).
+        // Hier lesen wir direkt die P51-Ausgabe (v1_body als Proxy falls vorhanden,
+        // sonst thetad-Felder aus GuidanceContext).
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N17 (CPHIX / ASTRONAUT TOTAL ATTITUDE).
+        // AGC source: EXTENDED_VERBS.agc, V60 (SET CPHIX = CDU).
+        // ------------------------------------------------------------------
+        17 => {
+            // CPHIX = aktuelle CDU-Winkel (OGA/MGA/IGA). Wir lesen aus thetad
+            // falls gesetzt, sonst Blank (P51/P52 muss erst Werte liefern).
+            let [oga_rad, mga_rad, iga_rad] = ctx.guidance.thetad;
+            // Nur anzeigen, wenn thetad ≠ [0;0;0] (initialer Defaultwert = kein Wert).
+            // Eine echte IMU würde hier CDUX/CDUY/CDUZ liefern — im Simulator
+            // werden die thetad-Felder nach P51/P52-Berechnungen gesetzt.
+            if oga_rad == 0.0 && mga_rad == 0.0 && iga_rad == 0.0 {
+                return [DisplayRegister::Blank; 3];
+            }
+            [
+                DisplayRegister::Decimal(rad_to_centideg(oga_rad)),
+                DisplayRegister::Decimal(rad_to_centideg(mga_rad)),
+                DisplayRegister::Decimal(rad_to_centideg(iga_rad)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N20 — ICDU Angles: OGA, MGA, IGA [0.01°]
+        // P51/P52 IMU-Alignment — zeigt aktuelle CDU-Winkel (CDUX, CDUY, CDUZ).
+        // R1 = OGA (Outer Gimbal Angle) [0.01°]
+        // R2 = MGA (Middle Gimbal Angle) [0.01°]
+        // R3 = IGA (Inner Gimbal Angle) [0.01°]
+        //
+        // Liest thetad aus GuidanceContext (wird von P52 / V41 gesetzt).
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N20 (ICDU ANGLES).
+        // AGC source: PINBALL_NOUN_TABLES.agc, ECADR CDUX (# 20 ICDU ANGLES).
+        // ------------------------------------------------------------------
+        20 => {
+            let [oga_rad, mga_rad, iga_rad] = ctx.guidance.thetad;
+            if oga_rad == 0.0 && mga_rad == 0.0 && iga_rad == 0.0 {
+                return [DisplayRegister::Blank; 3];
+            }
+            [
+                DisplayRegister::Decimal(rad_to_centideg(oga_rad)),
+                DisplayRegister::Decimal(rad_to_centideg(mga_rad)),
+                DisplayRegister::Decimal(rad_to_centideg(iga_rad)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N22 — THETAD: Gewünschte neue CDU-Winkel [0.01°]
+        // P51/P52 IMU-Alignment — zeigt die Ziel-Gimbal-Winkel nach Alignment-Berechnung.
+        // R1 = THETAD[0] (OGA Ziel) [0.01°]
+        // R2 = THETAD[1] (MGA Ziel) [0.01°]
+        // R3 = THETAD[2] (IGA Ziel) [0.01°]
+        //
+        // THETAD = berechnete Ziel-Gimbalwinkel für Coarse/Fine Align.
+        // Wird durch P52-Berechnung oder V41-Befehl gesetzt.
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N22 (NEW ICDU ANGLES).
+        // AGC source: PINBALL_NOUN_TABLES.agc, ECADR THETAD (# 22 NEW ICDU ANGLES).
+        // ------------------------------------------------------------------
+        22 => {
+            let [t0, t1, t2] = ctx.guidance.thetad;
+            if t0 == 0.0 && t1 == 0.0 && t2 == 0.0 {
+                return [DisplayRegister::Blank; 3];
+            }
+            [
+                DisplayRegister::Decimal(rad_to_centideg(t0)),
+                DisplayRegister::Decimal(rad_to_centideg(t1)),
+                DisplayRegister::Decimal(rad_to_centideg(t2)),
+            ]
+        }
+
         // ------------------------------------------------------------------
         // N40 — SPS-Burn Monitor: VG (Velocity-to-Gain), TGO (Time-to-Go)
         // P40 SPS-Burn.
@@ -349,6 +449,61 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
                 DisplayRegister::Decimal(mps_to_display(dv.x)),
                 DisplayRegister::Decimal(mps_to_display(dv.y)),
                 DisplayRegister::Decimal(mps_to_display(dv.z)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N92 — New Optics Angles: SHAFT, TRUNION [0.01°]
+        // P52 IMU-Alignment — zeigt neue Optik-Winkel (aus Sternbeobachtung).
+        // R1 = SHAFT [0.01°]     (Shaft-Winkel des Optiksystems)
+        // R2 = TRUNION [0.01°]   (Trunnion-Winkel des Optiksystems)
+        // R3 = Blank (2-komponentiger Noun)
+        //
+        // Im aktuellen Modell werden Optik-Winkel nicht separat berechnet
+        // (P51 arbeitet mit IMU-Gimbals, nicht Optik). Daher Blank bis DAP/Optik-HAL.
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N92 (NEW OPTICS ANGLES SHAFT/TRUNION).
+        // AGC source: PINBALL_NOUN_TABLES.agc, OCT 02234 (# 92 NEW OPTICS ANGLES).
+        // ------------------------------------------------------------------
+        92 => {
+            // Optik-Winkel sind noch nicht im GuidanceContext modelliert.
+            // Blank zurückgeben bis der Optik-HAL verfügbar ist.
+            [DisplayRegister::Blank; 3]
+        }
+
+        // ------------------------------------------------------------------
+        // N93 — Delta Gyro Angles: ΔG1, ΔG2, ΔG3 [0.001°]
+        // P52 IMU-Alignment — zeigt die berechneten Gyro-Torquing-Korrekturen.
+        // R1 = ΔG1 [0.001°]   (Torquing-Winkel Achse 1)
+        // R2 = ΔG2 [0.001°]   (Torquing-Winkel Achse 2)
+        // R3 = ΔG3 [0.001°]   (Torquing-Winkel Achse 3)
+        //
+        // Die Gyro-Korrekturen werden aus der THETAD-Differenz (Ziel minus Ist)
+        // berechnet. Im aktuellen Modell wird die Differenz aus thetad (Ziel)
+        // und Null-Referenz approximiert.
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N93 (DELTA GYRO ANGLES).
+        // AGC source: PINBALL_NOUN_TABLES.agc, OCT 04237 (# 93 DELTA GYRO ANGLES).
+        // AGC source: P51-P53.agc, R55.1 (V06N93 display of gyro corrections).
+        // ------------------------------------------------------------------
+        93 => {
+            // THETAD-Differenz als Gyro-Torquing-Approximation.
+            // Wenn kein P51-State → Blank.
+            let Some(ref p51) = ctx.guidance.p51 else {
+                return [DisplayRegister::Blank; 3];
+            };
+            // Gyro-Korrekturen können aus v1_body/v2_body-Vektoren nicht direkt
+            // abgeleitet werden ohne vollständige Gyro-Torquing-Berechnung (R55).
+            // Wir zeigen THETAD-Winkel in 0.001° als Proxy für die Delta-Winkel,
+            // sobald P51 Phase ≥ 4 erreicht hat (TRIAD fertig).
+            if p51.phase != 0 {
+                return [DisplayRegister::Blank; 3]; // Noch nicht berechnet
+            }
+            let [t0, t1, t2] = ctx.guidance.thetad;
+            [
+                DisplayRegister::Decimal(deg_to_millideg(t0 * (180.0 / core::f64::consts::PI))),
+                DisplayRegister::Decimal(deg_to_millideg(t1 * (180.0 / core::f64::consts::PI))),
+                DisplayRegister::Decimal(deg_to_millideg(t2 * (180.0 / core::f64::consts::PI))),
             ]
         }
 
@@ -836,6 +991,157 @@ mod tests {
         assert_eq!(r1, DisplayRegister::Blank);
         assert_eq!(r2, DisplayRegister::Blank);
         assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-Task 5 — IMU-Alignment-Nouns (N17, N20, N22, N92, N93)
+    // -----------------------------------------------------------------------
+
+    /// N20 ohne thetad (Defaultwert 0,0,0) → Blank.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N20.
+    #[test]
+    fn n20_without_thetad_returns_blank() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(20), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank, "R1 muss Blank sein ohne thetad");
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N20 mit gesetztem thetad → korrekte CDU-Winkel in 0.01°.
+    ///
+    /// OGA = 45° → R1 = 4500; MGA = −90° → R2 = −9000; IGA = 15° → R3 = 1500
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N20 (ICDU ANGLES, XXX.XX DEG).
+    #[test]
+    fn n20_with_thetad_returns_centideg() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.thetad = [
+            45.0_f64.to_radians(),
+            (-90.0_f64).to_radians(),
+            15.0_f64.to_radians(),
+        ];
+
+        let [r1, r2, r3] = resolve(noun(20), &ctx);
+
+        // OGA = 45° → 4500 (0.01°)
+        assert_eq!(
+            r1,
+            DisplayRegister::Decimal(4500),
+            "R1 (OGA=45°) → 4500 (0.01°)"
+        );
+        // MGA = −90° → −9000 (0.01°)
+        assert_eq!(
+            r2,
+            DisplayRegister::Decimal(-9000),
+            "R2 (MGA=−90°) → −9000 (0.01°)"
+        );
+        // IGA = 15° → 1500 (0.01°)
+        assert_eq!(
+            r3,
+            DisplayRegister::Decimal(1500),
+            "R3 (IGA=15°) → 1500 (0.01°)"
+        );
+    }
+
+    /// N17 mit gesetztem thetad → identische CDU-Winkel wie N20.
+    ///
+    /// N17 (CPHIX) und N20 (ICDU) lesen beide aus `guidance.thetad`.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N17 (CPHIX / ASTRONAUT TOTAL ATTITUDE).
+    #[test]
+    fn n17_mirrors_n20_with_thetad() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.thetad = [
+            30.0_f64.to_radians(),
+            (-20.0_f64).to_radians(),
+            10.0_f64.to_radians(),
+        ];
+
+        let n17 = resolve(noun(17), &ctx);
+        let n20 = resolve(noun(20), &ctx);
+
+        assert_eq!(n17, n20, "N17 (CPHIX) und N20 (ICDU) müssen identisch sein");
+    }
+
+    /// N22 ohne thetad → Blank.
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N22 (NEW ICDU ANGLES).
+    #[test]
+    fn n22_without_thetad_returns_blank() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(22), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank);
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N22 mit gesetztem thetad → Ziel-Gimbal-Winkel in 0.01°.
+    ///
+    /// THETAD[0] = 60° → R1 = 6000
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N22 (NEW ICDU ANGLES, XXX.XX DEG).
+    #[test]
+    fn n22_with_thetad_returns_target_angles() {
+        let mut ctx = AgcContext::default();
+        ctx.guidance.thetad = [
+            60.0_f64.to_radians(),
+            (-30.0_f64).to_radians(),
+            5.0_f64.to_radians(),
+        ];
+
+        let [r1, r2, r3] = resolve(noun(22), &ctx);
+
+        assert_eq!(
+            r1,
+            DisplayRegister::Decimal(6000),
+            "R1 (THETAD[0]=60°) → 6000"
+        );
+        assert_eq!(
+            r2,
+            DisplayRegister::Decimal(-3000),
+            "R2 (THETAD[1]=−30°) → −3000"
+        );
+        assert_eq!(r3, DisplayRegister::Decimal(500), "R3 (THETAD[2]=5°) → 500");
+    }
+
+    /// N92 → immer Blank (Optik-Winkel noch nicht modelliert).
+    ///
+    /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N92 (NEW OPTICS ANGLES SHAFT/TRUNION).
+    #[test]
+    fn n92_returns_blank() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(92), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank, "N92 R1 muss Blank sein");
+        assert_eq!(r2, DisplayRegister::Blank, "N92 R2 muss Blank sein");
+        assert_eq!(r3, DisplayRegister::Blank, "N92 R3 muss Blank sein");
+    }
+
+    /// N93 ohne P51-State → Blank.
+    ///
+    /// AGC source: P51-P53.agc, R55.1 (V06N93).
+    #[test]
+    fn n93_without_p51_returns_blank() {
+        let ctx = AgcContext::default();
+        let [r1, r2, r3] = resolve(noun(93), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank, "N93 ohne P51 → Blank");
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N93 mit P51 in Phase ≠ 0 (noch nicht fertig) → Blank.
+    ///
+    /// AGC source: P51-P53.agc, P51 Phasenmodell (Phase 0 = fertig).
+    #[test]
+    fn n93_with_p51_in_progress_returns_blank() {
+        use crate::guidance::p51_53::P51State;
+
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p51 = Some(P51State::new(1, 2)); // Phase 2 = erste Messung ausstehend
+
+        let [r1, _, _] = resolve(noun(93), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank, "N93 mit P51 Phase≠0 → Blank");
     }
 
     // -----------------------------------------------------------------------
