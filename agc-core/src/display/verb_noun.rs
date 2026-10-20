@@ -392,7 +392,6 @@ pub fn write_to_dsky<H: crate::hal::dsky::DskyHal>(state: &DisplayState, dsky: &
     dsky.write_display_word(encode_display_word(state));
 }
 
-
 // ---------------------------------------------------------------------------
 // Sub-Task 7.3 — AGC-Keycode-Konstanten
 // ---------------------------------------------------------------------------
@@ -594,39 +593,37 @@ pub fn process_key(
             }
             KeyEvent::None
         }
-        KEY_ENTER => {
-            match buf.mode {
-                InputMode::Verb => {
-                    let val = buf.to_value();
-                    match VerbCode::new(val) {
-                        Some(v) => {
-                            state.verb = v;
-                            buf.clear();
-                            KeyEvent::VerbSet(v)
-                        }
-                        None => {
-                            state.lights.operator_error = true;
-                            KeyEvent::OperatorError
-                        }
+        KEY_ENTER => match buf.mode {
+            InputMode::Verb => {
+                let val = buf.to_value();
+                match VerbCode::new(val) {
+                    Some(v) => {
+                        state.verb = v;
+                        buf.clear();
+                        KeyEvent::VerbSet(v)
+                    }
+                    None => {
+                        state.lights.operator_error = true;
+                        KeyEvent::OperatorError
                     }
                 }
-                InputMode::Noun => {
-                    let val = buf.to_value();
-                    match NounCode::new(val) {
-                        Some(n) => {
-                            state.noun = n;
-                            buf.clear();
-                            KeyEvent::NounSet(n)
-                        }
-                        None => {
-                            state.lights.operator_error = true;
-                            KeyEvent::OperatorError
-                        }
-                    }
-                }
-                InputMode::Idle => KeyEvent::Enter,
             }
-        }
+            InputMode::Noun => {
+                let val = buf.to_value();
+                match NounCode::new(val) {
+                    Some(n) => {
+                        state.noun = n;
+                        buf.clear();
+                        KeyEvent::NounSet(n)
+                    }
+                    None => {
+                        state.lights.operator_error = true;
+                        KeyEvent::OperatorError
+                    }
+                }
+            }
+            InputMode::Idle => KeyEvent::Enter,
+        },
         KEY_CLR => {
             buf.clear();
             state.lights.operator_error = false;
@@ -649,7 +646,6 @@ pub fn process_key(
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Tests

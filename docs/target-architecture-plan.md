@@ -390,7 +390,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 7 — DSKY-Protokoll & Display-Interface
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Verb/Noun-Mechanismus und Display-State als agc-core-internes Protokoll. Keine Darstellung (die ist in agc-sim), nur Zustandsverwaltung und Dispatch.
 

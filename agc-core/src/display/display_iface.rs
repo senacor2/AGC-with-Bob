@@ -120,11 +120,7 @@ impl Default for DisplayQueue {
 /// Entspricht dem NVSUB-Einstieg im AGC.
 ///
 /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, NVSUB.
-pub fn request_display(
-    state: &mut DisplayState,
-    queue: &mut DisplayQueue,
-    req: DisplayRequest,
-) {
+pub fn request_display(state: &mut DisplayState, queue: &mut DisplayQueue, req: DisplayRequest) {
     if !state.dsp_lock {
         state.verb = req.verb;
         state.noun = req.noun;
