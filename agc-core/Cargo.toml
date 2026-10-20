@@ -9,6 +9,7 @@ edition = "2021"
 sim = []
 
 [dependencies]
+libm = { version = "0.2", default-features = false }
 # cortex-m is added when the interrupt/scheduler layer is implemented (Task 5).
 
 [dev-dependencies]

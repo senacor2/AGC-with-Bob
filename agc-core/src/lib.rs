@@ -12,3 +12,4 @@
 //! - `panic = "abort"`: every panic triggers GOJAM (hardware restart).
 
 pub mod hal;
+pub mod types;

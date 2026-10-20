@@ -275,7 +275,7 @@ agc-sim/
 
 ### Task 3 — Gemeinsame Newtypes (types-Modul)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Physikalische Einheiten als Newtypes definieren, um Verwechslungen von Skalierungen zu verhindern. Jede Größe trägt ihre Einheit im Typ.
 
