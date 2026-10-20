@@ -155,7 +155,7 @@ auf der aktuellen (gemessenen) statt der propagierten Position des Passivfahrzeu
 
 ## Sub-Task 5 — Integration, Validierung & Git-Commit
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Alle drei Programme durch den Executive laufen lassen (als Jobs), Plan-Status
 aktualisieren und Commit erstellen.
