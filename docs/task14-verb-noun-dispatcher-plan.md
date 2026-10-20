@@ -112,7 +112,7 @@ Dieses Struct ermöglicht es dem Dispatcher, auf alle Programmzustände zuzugrei
 
 ## Sub-Task 2 — `VerbDispatcher`: Priorität P0 (Reentry V06/V16)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Kernstück für Reentry: Dispatch der Display-Verben V06 (einmalige Anzeige)
 und V16 (Monitor = Wiederholanzeige). Diese Verben bilden zusammen mit den Reentry-Nouns
