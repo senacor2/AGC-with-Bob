@@ -392,6 +392,265 @@ pub fn write_to_dsky<H: crate::hal::dsky::DskyHal>(state: &DisplayState, dsky: &
     dsky.write_display_word(encode_display_word(state));
 }
 
+
+// ---------------------------------------------------------------------------
+// Sub-Task 7.3 — AGC-Keycode-Konstanten
+// ---------------------------------------------------------------------------
+
+/// AGC-Tastaturkode: Ziffer 0.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, KEYCODE-Tabelle.
+pub const KEY_0: u8 = 0;
+/// AGC-Tastaturkode: Ziffer 1.
+pub const KEY_1: u8 = 1;
+/// AGC-Tastaturkode: Ziffer 2.
+pub const KEY_2: u8 = 2;
+/// AGC-Tastaturkode: Ziffer 3.
+pub const KEY_3: u8 = 3;
+/// AGC-Tastaturkode: Ziffer 4.
+pub const KEY_4: u8 = 4;
+/// AGC-Tastaturkode: Ziffer 5.
+pub const KEY_5: u8 = 5;
+/// AGC-Tastaturkode: Ziffer 6.
+pub const KEY_6: u8 = 6;
+/// AGC-Tastaturkode: Ziffer 7.
+pub const KEY_7: u8 = 7;
+/// AGC-Tastaturkode: Ziffer 8.
+pub const KEY_8: u8 = 8;
+/// AGC-Tastaturkode: Ziffer 9.
+pub const KEY_9: u8 = 9;
+/// AGC-Tastaturkode: VERB-Taste (17).
+pub const KEY_VERB: u8 = 17;
+/// AGC-Tastaturkode: NOUN-Taste (18).
+pub const KEY_NOUN: u8 = 18;
+/// AGC-Tastaturkode: ENTER (14).
+pub const KEY_ENTER: u8 = 14;
+/// AGC-Tastaturkode: CLR — löscht laufende Eingabe (28).
+pub const KEY_CLR: u8 = 28;
+/// AGC-Tastaturkode: PRO / PROCEED = V33 (30).
+pub const KEY_PRO: u8 = 30;
+/// AGC-Tastaturkode: KEY RELEASE — gibt Tastatur wieder frei (24).
+pub const KEY_KEY_REL: u8 = 24;
+/// AGC-Tastaturkode: RSET / RESET (22).
+pub const KEY_RSET: u8 = 22;
+/// AGC-Tastaturkode: + (26).
+pub const KEY_PLUS: u8 = 26;
+/// AGC-Tastaturkode: − (27).
+pub const KEY_MINUS: u8 = 27;
+
+// ---------------------------------------------------------------------------
+// Sub-Task 7.3 — InputMode / InputBuffer
+// ---------------------------------------------------------------------------
+
+/// Aktueller Eingabemodus des PINBALL-Tastaturautomaten.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, CHARIN.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum InputMode {
+    /// Kein laufender Eingabevorgang.
+    Idle,
+    /// Verb-Eingabe aktiv (nach KEY_VERB).
+    Verb,
+    /// Noun-Eingabe aktiv (nach KEY_NOUN).
+    Noun,
+}
+
+/// Puffer für eine laufende zweistellige Verb- oder Noun-Eingabe.
+///
+/// Sammelt bis zu zwei Dezimalziffern (0–9), bevor sie per ENTER
+/// als `VerbCode` oder `NounCode` übernommen werden.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, CHARIN.
+pub struct InputBuffer {
+    digits: [u8; 2],
+    count: u8,
+    /// Welche Taste zuletzt gedrückt wurde (VERB / NOUN / keine).
+    pub mode: InputMode,
+}
+
+impl InputBuffer {
+    /// Leerer Puffer im Idle-Modus.
+    pub const fn new() -> Self {
+        Self {
+            digits: [0; 2],
+            count: 0,
+            mode: InputMode::Idle,
+        }
+    }
+
+    /// Fügt eine Dezimalziffer (0–9) in den Puffer ein.
+    ///
+    /// Gibt `false` zurück wenn der Puffer bereits voll ist (2 Ziffern).
+    pub fn push_digit(&mut self, d: u8) -> bool {
+        if self.count >= 2 {
+            return false;
+        }
+        self.digits[self.count as usize] = d;
+        self.count += 1;
+        true
+    }
+
+    /// Konvertiert den Pufferinhalt in einen dezimalen `u8`-Wert.
+    ///
+    /// - 2 Ziffern: `10 * d[0] + d[1]`
+    /// - 1 Ziffer:  `d[0]`
+    /// - 0 Ziffern: `0`
+    pub fn to_value(&self) -> u8 {
+        match self.count {
+            2 => 10 * self.digits[0] + self.digits[1],
+            1 => self.digits[0],
+            _ => 0,
+        }
+    }
+
+    /// Leert den Puffer und setzt den Modus auf [`InputMode::Idle`].
+    pub fn clear(&mut self) {
+        self.digits = [0; 2];
+        self.count = 0;
+        self.mode = InputMode::Idle;
+    }
+}
+
+impl Default for InputBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-Task 7.3 — KeyEvent-Enum
+// ---------------------------------------------------------------------------
+
+/// Ergebnis eines einzelnen verarbeiteten Tastendrucks.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, CHARIN.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum KeyEvent {
+    /// Keine besondere Aktion (z. B. Zifferneingabe läuft noch).
+    None,
+    /// Verb-Code wurde per ENTER übernommen.
+    VerbSet(VerbCode),
+    /// Noun-Code wurde per ENTER übernommen.
+    NounSet(NounCode),
+    /// ENTER im Idle-Modus — "Accept" / PROCEED-Signal.
+    Enter,
+    /// PRO / PROCEED (V33).
+    Proceed,
+    /// Terminate — Anforderung abgebrochen.
+    Terminate,
+    /// Recycle — Anforderung wiederholt.
+    Recycle,
+    /// RSET — Alarmlampe gelöscht, Puffer geleert.
+    Reset,
+    /// OPERATOR ERROR ausgelöst.
+    OperatorError,
+}
+
+// ---------------------------------------------------------------------------
+// Sub-Task 7.3 — process_key
+// ---------------------------------------------------------------------------
+
+/// Verarbeitet einen einzelnen AGC-Tastendruck und aktualisiert `DisplayState`.
+///
+/// Implementiert den CHARIN-Zustandsautomaten (vereinfacht — kein vollständiger
+/// PINBALL-Automat, aber korrekte Kernlogik für Ziffern, VERB/NOUN, ENTER, CLR,
+/// PRO, KEY REL, RSET).
+///
+/// # Parameter
+/// - `state`  — Aktueller DSKY-Anzeigestatus (wird ggf. modifiziert).
+/// - `buf`    — Laufender Eingabepuffer (wird ggf. modifiziert).
+/// - `key`    — Rohkeycode (AGC KEYRUPT-Format, 0–31).
+/// - `alarm`  — Alarmzustand für unbekannte Keycodes.
+///
+/// # Rückgabe
+/// Ein [`KeyEvent`]-Wert, der beschreibt was mit dem Tastendruck passiert ist.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, CHARIN.
+pub fn process_key(
+    state: &mut DisplayState,
+    buf: &mut InputBuffer,
+    key: KeyCode,
+    alarm: &mut crate::alarm::AlarmState,
+) -> KeyEvent {
+    match key.val() {
+        KEY_VERB => {
+            buf.clear();
+            buf.mode = InputMode::Verb;
+            KeyEvent::None
+        }
+        KEY_NOUN => {
+            buf.clear();
+            buf.mode = InputMode::Noun;
+            KeyEvent::None
+        }
+        KEY_0..=KEY_9 => {
+            if buf.mode == InputMode::Idle {
+                state.lights.operator_error = true;
+                return KeyEvent::OperatorError;
+            }
+            if !buf.push_digit(key.val()) {
+                state.lights.operator_error = true;
+                return KeyEvent::OperatorError;
+            }
+            KeyEvent::None
+        }
+        KEY_ENTER => {
+            match buf.mode {
+                InputMode::Verb => {
+                    let val = buf.to_value();
+                    match VerbCode::new(val) {
+                        Some(v) => {
+                            state.verb = v;
+                            buf.clear();
+                            KeyEvent::VerbSet(v)
+                        }
+                        None => {
+                            state.lights.operator_error = true;
+                            KeyEvent::OperatorError
+                        }
+                    }
+                }
+                InputMode::Noun => {
+                    let val = buf.to_value();
+                    match NounCode::new(val) {
+                        Some(n) => {
+                            state.noun = n;
+                            buf.clear();
+                            KeyEvent::NounSet(n)
+                        }
+                        None => {
+                            state.lights.operator_error = true;
+                            KeyEvent::OperatorError
+                        }
+                    }
+                }
+                InputMode::Idle => KeyEvent::Enter,
+            }
+        }
+        KEY_CLR => {
+            buf.clear();
+            state.lights.operator_error = false;
+            KeyEvent::None
+        }
+        KEY_PRO => KeyEvent::Proceed,
+        KEY_KEY_REL => {
+            state.lights.key_release = false;
+            KeyEvent::None
+        }
+        KEY_RSET => {
+            state.lights.operator_error = false;
+            buf.clear();
+            KeyEvent::Reset
+        }
+        _ => {
+            crate::alarm::raise(alarm, 0x0700);
+            state.lights.operator_error = true;
+            KeyEvent::OperatorError
+        }
+    }
+}
+
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -607,5 +866,92 @@ mod tests {
         let mut mock = MockDsky::new();
         write_to_dsky(&state, &mut mock);
         assert_eq!(mock.last_display_word & 1, 1);
+    }
+
+    // --- Sub-Task 7.3: process_key ---
+
+    fn make_key(k: u8) -> KeyCode {
+        KeyCode::new(k).unwrap()
+    }
+
+    #[test]
+    fn verb_entry_sequence() {
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_3), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_7), &mut alarm);
+        let ev = process_key(&mut state, &mut buf, make_key(KEY_ENTER), &mut alarm);
+
+        assert_eq!(ev, KeyEvent::VerbSet(VerbCode(37)));
+        assert_eq!(state.verb, VerbCode(37));
+        // Puffer muss danach leer/Idle sein
+        assert_eq!(buf.mode, InputMode::Idle);
+    }
+
+    #[test]
+    fn noun_entry_sequence() {
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        process_key(&mut state, &mut buf, make_key(KEY_NOUN), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_1), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_8), &mut alarm);
+        let ev = process_key(&mut state, &mut buf, make_key(KEY_ENTER), &mut alarm);
+
+        assert_eq!(ev, KeyEvent::NounSet(NounCode(18)));
+        assert_eq!(state.noun, NounCode(18));
+    }
+
+    #[test]
+    fn digit_without_mode_is_error() {
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        let ev = process_key(&mut state, &mut buf, make_key(KEY_1), &mut alarm);
+
+        assert_eq!(ev, KeyEvent::OperatorError);
+        assert!(state.lights.operator_error);
+    }
+
+    #[test]
+    fn clr_resets_buffer_and_error() {
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        // VERB → 5 → CLR → 3 → 7 → ENTER  ⟹  VerbSet(37)
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_5), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_CLR), &mut alarm);
+        // Nach CLR: Puffer leer, Modus Idle → wir müssen erneut VERB drücken
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_3), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_7), &mut alarm);
+        let ev = process_key(&mut state, &mut buf, make_key(KEY_ENTER), &mut alarm);
+
+        assert_eq!(ev, KeyEvent::VerbSet(VerbCode(37)));
+        assert!(!state.lights.operator_error);
+    }
+
+    #[test]
+    fn invalid_verb_overflow_is_error() {
+        // KEY_9 KEY_9 füllt den Puffer (Wert 99, gültig).
+        // Ein dritter KEY_9 löst OperatorError aus (Puffer voll).
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_9), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_9), &mut alarm);
+        let ev = process_key(&mut state, &mut buf, make_key(KEY_9), &mut alarm);
+
+        assert_eq!(ev, KeyEvent::OperatorError);
+        assert!(state.lights.operator_error);
     }
 }

@@ -8,3 +8,4 @@
 //! `Comanche055/DISPLAY_INTERFACE_ROUTINES.agc`.
 
 pub mod verb_noun;
+pub mod display_iface;
