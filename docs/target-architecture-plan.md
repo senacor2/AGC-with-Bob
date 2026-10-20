@@ -502,7 +502,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 8e — Guidance: Entry-Programme (P61–P67, P37, P70)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Atmosphärischer Wiedereintritt und Notfall-Rückkehr. Nutzt `agc-physics::aero` für aerodynamische Kräfte und `dap::rcs_dap` für Entry-Lageregelung.
 

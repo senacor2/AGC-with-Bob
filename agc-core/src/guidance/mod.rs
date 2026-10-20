@@ -46,6 +46,16 @@
 //! - **P51/P52/P53** — IMU-Alignment.
 //!   AGC-Quelle: `Comanche055/P51-P53.agc`
 //!
+//! - **P61/P62/P63/P64/P65/P66/P67** — Entry Preparation + Reentry Control:
+//!   Atmosphärischer Wiedereintritt, Rollsteuerung, G-Last-Überwachung.
+//!   AGC-Quelle: `Comanche055/P61-P67.agc`, `Comanche055/REENTRY_CONTROL.agc`
+//!
+//! - **P37 (Emergency)** — Emergency Return to Earth: Lambert-Manöver für Notfall-Rückkehr.
+//!   AGC-Quelle: `Comanche055/P37,P70.agc`
+//!
+//! - **P70** — Emergency P70: Minimales-Δv Notfall-Rückkehr-Variante.
+//!   AGC-Quelle: `Comanche055/P37,P70.agc`
+//!
 //! # Hinweis für `no_std`
 //! Kein Heap, kein `static mut`. Phase-Table-Checkpoints sichern den
 //! Fortschritt restart-sicher ab.
@@ -57,9 +67,11 @@ pub mod p11;
 pub mod p20_25;
 pub mod p30_37;
 pub mod p32_33;
+pub mod p37_70;
 pub mod p38_39;
 pub mod p40_47;
 pub mod p51_53;
+pub mod p61_67;
 
 /// Gemeinsame Abstraktion für alle AGC-Guidance-Programme (P-Programme).
 ///
