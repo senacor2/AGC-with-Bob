@@ -9,7 +9,10 @@
 pub mod alignment;
 pub mod conic;
 pub mod ephemeris;
+pub mod lat_lon;
 pub mod measurement;
 pub mod orbital;
 pub mod powered_flight;
+pub mod star_tables;
 pub mod state_vector;
+pub mod time_of_fall;
