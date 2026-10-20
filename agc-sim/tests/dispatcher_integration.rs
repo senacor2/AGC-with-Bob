@@ -256,3 +256,114 @@ fn p52_start_sequence_sets_program_52() {
     assert_eq!(state.ctx.guidance.active_program, Some(52));
     assert!(!state.ctx.display.flash_state);
 }
+
+// ---------------------------------------------------------------------------
+// Test 10: VerbSet-Dispatch-Regression — V16 ENTER darf Noun nicht überschreiben
+// ---------------------------------------------------------------------------
+
+/// Stellt sicher dass `V16 ENTER` allein keinen Dispatch auslöst der den
+/// zuvor gesetzten Noun auf N00 zurücksetzt.
+///
+/// Vorher (Bug): VerbSet dispatcht sofort → `dispatch(V16, N00)` → setzt
+/// `ctx.display.noun = N00`, überschreibt vorherigen Noun.
+/// Nachher (Fix): VerbSet dispatcht nur bei V32/V33/V34; Noun bleibt erhalten.
+#[test]
+fn verbset_does_not_overwrite_existing_noun() {
+    let mut state = SimState::new();
+
+    // Erst einen Noun setzen
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+    assert_eq!(state.ctx.display.noun.val(), 61, "Setup: noun=61 erwartet");
+
+    // Jetzt V16 ENTER — darf noun NICHT zurücksetzen
+    press_keys(&mut state, &[KEY_VERB, KEY_1, KEY_6, KEY_ENTER]);
+
+    // Noun muss noch 61 sein (nicht auf 00 zurückgesetzt)
+    assert_eq!(
+        state.ctx.display.noun.val(),
+        61,
+        "Noun darf nach VerbSet(16) nicht überschrieben werden (war 61)"
+    );
+    // Verb muss auf 16 gesetzt sein
+    assert_eq!(
+        state.ctx.display.verb.val(),
+        16,
+        "Verb nach V16-ENTER muss 16 sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 11: V16N67 — Verb und Noun korrekt gesetzt, kein Flash
+// ---------------------------------------------------------------------------
+
+/// Vollständige V16N67-Sequenz: Verb=16, Noun=67, flash=false.
+/// Regression für den Bug "Verb wird nicht angezeigt".
+#[test]
+fn v16n67_verb_and_noun_set_no_flash() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_1, KEY_6, KEY_ENTER]);
+    // Zwischen VerbSet und NounSet: Noun darf nicht auf 0 fallen
+    assert_ne!(
+        state.ctx.display.verb.val(),
+        0,
+        "Verb darf nach V16-ENTER nicht 0 sein"
+    );
+
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_7, KEY_ENTER]);
+
+    // Verb = 16, Noun = 67
+    assert_eq!(state.ctx.display.verb.val(), 16, "Verb muss 16 sein");
+    assert_eq!(state.ctx.display.noun.val(), 67, "Noun muss 67 sein");
+
+    // Kein Blinken (V16 = Monitor, kein Flash)
+    assert!(
+        !state.ctx.display.flash_state,
+        "flash_state muss false sein bei V16"
+    );
+    assert!(
+        !state.ctx.display.lights.verb_noun_flash,
+        "verb_noun_flash muss false sein bei V16"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 12: V33 — Proceed-Flag gesetzt auch ohne vorherigen Noun (VerbSet-Dispatch)
+// ---------------------------------------------------------------------------
+
+/// V33 (Proceed) muss auch ohne vorherigen Noun-ENTER durch VerbSet ausgelöst
+/// werden, da es ein Sofort-Verb ist (kein Noun benötigt).
+#[test]
+fn v33_verbset_immediate_dispatch() {
+    let mut state = SimState::new();
+    assert!(
+        !state.ctx.guidance.proceed_flag,
+        "proceed_flag initial false"
+    );
+
+    // V33 ENTER — kein Noun nötig, Dispatch sofort
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_3, KEY_ENTER]);
+
+    assert!(
+        state.ctx.guidance.proceed_flag,
+        "proceed_flag nach V33 ENTER muss true sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 13: V34 — Terminate-Flag gesetzt durch VerbSet-Dispatch
+// ---------------------------------------------------------------------------
+
+/// V34 (Terminate) muss durch VerbSet sofort dispatcht werden.
+#[test]
+fn v34_verbset_immediate_dispatch() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_4, KEY_ENTER]);
+
+    assert!(
+        state.ctx.guidance.terminate_flag,
+        "terminate_flag nach V34 ENTER muss true sein"
+    );
+}

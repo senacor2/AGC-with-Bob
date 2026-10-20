@@ -150,18 +150,30 @@ pub fn sim_tick(state: &mut SimState) {
                 &mut state.alarms,
             );
 
-            // Dispatcher aufrufen wenn Verb oder Noun per ENTER übernommen wurde
+            // Dispatcher aufrufen wenn Verb oder Noun per ENTER übernommen wurde.
+            //
+            // AGC VERBFAN-Logik: Der Dispatcher wird erst ausgelöst, wenn Noun
+            // gesetzt wird (NounSet). Ein reines VerbSet (ohne nachfolgendes Noun)
+            // löst keinen Dispatch aus — das entspricht dem echten PINBALL-Automat,
+            // der auf ENTER im Idle-Modus oder NounSet reagiert.
+            //
+            // Ausnahme: V33/V34/V32 (Proceed/Terminate/Recycle) werden auch ohne
+            // Noun per VerbSet sofort ausgelöst, da sie keinen Noun benötigen.
+            //
             // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, VERBFAN.
             match event {
-                KeyEvent::VerbSet(_) => {
-                    // Verb wurde gesetzt — Dispatcher auslösen mit aktuell
-                    // gecachtem Noun (Verb-only-Dispatch, z. B. V33/V34).
-                    let verb = state.ctx.display.verb;
-                    let noun = state.ctx.display.noun;
-                    VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+                KeyEvent::VerbSet(v) => {
+                    // Nur sofort dispatchen wenn Verb keinen Noun braucht (V32/V33/V34).
+                    // V06/V16/V25/V37/V41/V42 warten auf NounSet.
+                    let v_raw = v.val();
+                    if matches!(v_raw, 32..=34) {
+                        let verb = state.ctx.display.verb;
+                        let noun = state.ctx.display.noun;
+                        VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+                    }
                 }
                 KeyEvent::NounSet(_) => {
-                    // Noun gesetzt — Dispatcher auslösen (z. B. V06 N60).
+                    // Noun gesetzt — Dispatcher auslösen (z. B. V06 N60, V16 N67).
                     let verb = state.ctx.display.verb;
                     let noun = state.ctx.display.noun;
                     VerbDispatcher::dispatch(verb, noun, &mut state.ctx);

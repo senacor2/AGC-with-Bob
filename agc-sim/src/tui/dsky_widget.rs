@@ -241,8 +241,8 @@ fn render_register(reg: &DisplayRegister, label: &str, x: u16, y: u16, buf: &mut
 }
 
 fn render_display_panel(state: &DisplayState, x: u16, y: u16, buf: &mut Buffer) {
-    // Hintergrund füllen
-    for row in y..y + 16 {
+    // Hintergrund füllen: R3-Segmente enden bei y+20 (Label y+17, Segs y+18..y+20)
+    for row in y..y + 21 {
         buf.set_string(x, row, " ".repeat(30), Style::default().bg(COL_DISPLAY_BG));
     }
 
@@ -259,10 +259,11 @@ fn render_display_panel(state: &DisplayState, x: u16, y: u16, buf: &mut Buffer) 
     render_label_code("VERB", state.verb.val(), vn_flash, x, y + 5, buf);
     render_label_code("NOUN", state.noun.val(), vn_flash, x + 16, y + 5, buf);
 
-    // R1 / R2 / R3 — je 4 Zeilen (Label + 3 Segment-Zeilen), Abstand 1 Zeile
+    // R1 / R2 / R3 — je 4 Zeilen (Label + 3 Segment-Zeilen), kein Abstand dazwischen.
+    // R1: y+9..y+12, R2: y+13..y+16, R3: y+17..y+20 — Separator folgt bei y+21.
     render_register(&state.r1, "R1", x, y + 9, buf);
-    render_register(&state.r2, "R2", x, y + 14, buf);
-    render_register(&state.r3, "R3", x, y + 19, buf);
+    render_register(&state.r2, "R2", x, y + 13, buf);
+    render_register(&state.r3, "R3", x, y + 17, buf);
 }
 
 // ---------------------------------------------------------------------------
