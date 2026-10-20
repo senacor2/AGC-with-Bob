@@ -5,7 +5,10 @@
 //!
 //! # Crate-Struktur
 //! - [`hal`]: Brücke agc-physics ↔ agc-core (Task 11)
-//! - TUI / Sim-Loop: folgen in Task 12
+//! - `tui`: ratatui-basierte DSKY-Oberfläche (Task 12)
+//! - `sim_loop`: Haupt-Simulations-/TUI-Schleife (Task 12)
 //! - End-to-End Integrationstests: folgen in Task 13
 
 pub mod hal;
+pub mod sim_loop;
+pub mod tui;
