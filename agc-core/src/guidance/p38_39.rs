@@ -429,4 +429,84 @@ mod tests {
         );
         assert!(alarm.last().is_none());
     }
+
+    /// P39: Kleine radiale Abweichung → Korrektur in sinnvoller Größenordnung.
+    ///
+    /// Das Passivfahrzeug liegt 5 km radial (r-Richtung) versetzt gegenüber
+    /// der erwarteten Kreisbahn. Die berechnete Δv-Korrektur muss:
+    /// - > 0 sein (es gibt eine echte Korrektur),
+    /// - < 200 m/s liegen (physikalisch realistisch für LEO, 5 km Offset).
+    ///
+    /// AGC source: `Comanche055/STABLE_ORBIT_-_P38-P39.agc`, MAINRTNE (P39-Zweig).
+    #[test]
+    fn p39_small_offset_gives_nonzero_correction() {
+        use crate::navigation::conic::kepler_step;
+
+        let r = 6_678_000.0_f64;
+        let period = 2.0 * core::f64::consts::PI * libm::sqrt(r * r * r / MU_EARTH);
+        let angle = 2.0 * core::f64::consts::PI / 3.0; // 120°
+        let tof = period / 3.0;
+
+        // r₂ (Intercept-Punkt nach tof) auf Kreisbahn
+        let r2 = Vec3::new(r * libm::cos(angle), r * libm::sin(angle), 0.0);
+
+        // Lambert-Transfergeschwindigkeit aus aktivem Fahrzeug zur korrekten Position
+        let (v_lambert_init, _) =
+            crate::navigation::conic::lambert(Vec3::new(r, 0.0, 0.0), r2, tof, MU_EARTH, true)
+                .expect("120°-Lambert muss konvergieren");
+
+        // Aktives Fahrzeug befindet sich bereits auf der Transferbahn
+        let sv_active_on_transfer = StateVector::new(
+            Vec3::new(r, 0.0, 0.0),
+            v_lambert_init,
+            Met::from_seconds(0.0),
+        );
+
+        // Passives Fahrzeug: radial um 5 km versetzt (höhere Bahn)
+        let r_offset = r + 5_000.0;
+        let v_circ_offset = libm::sqrt(MU_EARTH / r_offset);
+        let v2_offset = Vec3::new(
+            -v_circ_offset * libm::sin(angle),
+            v_circ_offset * libm::cos(angle),
+            0.0,
+        );
+        let sv_at_r2_offset = StateVector::new(
+            Vec3::new(
+                r_offset * libm::cos(angle),
+                r_offset * libm::sin(angle),
+                0.0,
+            ),
+            v2_offset,
+            Met::from_seconds(0.0),
+        );
+        let mut alarm = AlarmState::new();
+        let sv_passive_offset = kepler_step(sv_at_r2_offset, -tof, MU_EARTH, &mut alarm);
+        assert!(alarm.last().is_none(), "Rückwärts-Propagation kein Alarm");
+
+        let input = P39Input {
+            sv_active: sv_active_on_transfer,
+            sv_passive_measured: sv_passive_offset,
+            tof_remaining: tof,
+            body: CentralBody::Earth,
+        };
+
+        let result = p39_compute(&input, &mut alarm);
+        assert!(
+            result.is_some(),
+            "P39 mit 5-km-Offset muss konvergieren (Lambert-Aufruf)"
+        );
+
+        let dv_corr = result.unwrap().delta_v_correction.magnitude();
+        assert!(
+            dv_corr > 0.1,
+            "Korrektur bei 5-km-Offset muss > 0 sein, got {:.3} m/s",
+            dv_corr
+        );
+        assert!(
+            dv_corr < 200.0,
+            "Korrektur bei 5-km-Offset muss < 200 m/s sein (LEO), got {:.3} m/s",
+            dv_corr
+        );
+        assert!(alarm.last().is_none());
+    }
 }
