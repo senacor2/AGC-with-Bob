@@ -146,7 +146,7 @@ und V16 (Monitor = Wiederholanzeige). Diese Verben bilden zusammen mit den Reent
 
 ## Sub-Task 3 — `VerbDispatcher`: V37 (Programm-Wechsel), V25/N61 (Load), V33/V34/V32
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: V37 (Change Program) ist das Herzstück jedes Missionsstarts. Astronaut
 drückt `VERB 37 ENTER [61] ENTER` um P61 zu starten. Der Dispatcher muss daraufhin
