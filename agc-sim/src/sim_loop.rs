@@ -197,7 +197,8 @@ pub fn map_key(key: CrossKey, mods: KeyModifiers) -> Option<u8> {
         CrossKey::Char('9') => Some(KEY_9),
         CrossKey::Char('v') | CrossKey::Char('V') => Some(KEY_VERB),
         CrossKey::Char('n') | CrossKey::Char('N') => Some(KEY_NOUN),
-        CrossKey::Enter => Some(KEY_ENTER),
+        // Enter-Taste oder 'e'/'E' — beides löst ENTR aus
+        CrossKey::Enter | CrossKey::Char('e') | CrossKey::Char('E') => Some(KEY_ENTER),
         CrossKey::Char('c') | CrossKey::Char('C') if !mods.contains(KeyModifiers::CONTROL) => {
             Some(KEY_CLR)
         }

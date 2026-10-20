@@ -124,6 +124,15 @@ fn key_mapping_verb_noun_enter() {
         map_key(KeyCode::Enter, KeyModifiers::empty()),
         Some(KEY_ENTER)
     );
+    // 'e' und 'E' sind ebenfalls ENTER (für V37E-Eingabe ohne Enter-Taste)
+    assert_eq!(
+        map_key(KeyCode::Char('e'), KeyModifiers::empty()),
+        Some(KEY_ENTER)
+    );
+    assert_eq!(
+        map_key(KeyCode::Char('E'), KeyModifiers::empty()),
+        Some(KEY_ENTER)
+    );
 }
 
 #[test]

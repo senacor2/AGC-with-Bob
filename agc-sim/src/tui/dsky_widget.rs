@@ -87,9 +87,9 @@ impl Widget for DskyWidget<'_> {
 // ---------------------------------------------------------------------------
 
 fn render_dsky(state: &DisplayState, comp_acty: bool, area: Rect, buf: &mut Buffer) {
-    // Mindestgröße: 60×30 — bei zu kleinem Terminal Fehler anzeigen
-    if area.width < 60 || area.height < 28 {
-        let msg = "[ Terminal zu klein — mind. 60×28 ]";
+    // Mindestgröße: 62×34 — Oberteil 21 Zeilen + Trennlinie + Tastatur 12 Zeilen
+    if area.width < 62 || area.height < 34 {
+        let msg = "[ Terminal zu klein — mind. 62×34 ]";
         buf.set_string(area.x, area.y, msg, Style::default().fg(Color::Red));
         return;
     }
@@ -101,9 +101,9 @@ fn render_dsky(state: &DisplayState, comp_acty: bool, area: Rect, buf: &mut Buff
     render_status_lamps(state, comp_acty, x, y, buf);
     render_display_panel(state, x + 28, y, buf);
 
-    // --- Trennlinie ---
-    let sep_y = y + 16;
-    for col in x..x + area.width.min(60) {
+    // --- Trennlinie: nach 21 Zeilen (R3 endet bei y+20) ---
+    let sep_y = y + 21;
+    for col in x..x + area.width.min(62) {
         buf.set_string(col, sep_y, "─", Style::default().fg(COL_FRAME));
     }
 
@@ -259,9 +259,10 @@ fn render_display_panel(state: &DisplayState, x: u16, y: u16, buf: &mut Buffer) 
     render_label_code("VERB", state.verb.val(), vn_flash, x, y + 5, buf);
     render_label_code("NOUN", state.noun.val(), vn_flash, x + 16, y + 5, buf);
 
-    // R1 / R2 / R3
+    // R1 / R2 / R3 — je 4 Zeilen (Label + 3 Segment-Zeilen), Abstand 1 Zeile
     render_register(&state.r1, "R1", x, y + 9, buf);
-    render_register(&state.r2, "R2", x, y + 13, buf); // Hinweis: bei Höhe <17 wird R3 abgeschnitten
+    render_register(&state.r2, "R2", x, y + 14, buf);
+    render_register(&state.r3, "R3", x, y + 19, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -326,19 +327,22 @@ fn render_keyboard(x: u16, y: u16, buf: &mut Buffer) {
     render_key("ENTR", "", rx, y, buf);
     render_key("RSET", "", rx, y + 8, buf);
 
-    // Tastatur-Legende
-    let legend = Line::from(vec![
+    // Tastatur-Legende (zwei Zeilen)
+    let legend1 = Line::from(vec![
         Span::styled("  Tasten: ", Style::default().fg(Color::DarkGray)),
         Span::styled("0–9", Style::default().fg(Color::White)),
-        Span::styled(" · ", Style::default().fg(Color::DarkGray)),
+        Span::styled("  ", Style::default().fg(Color::DarkGray)),
         Span::styled("v", Style::default().fg(Color::Yellow)),
         Span::styled("=VERB  ", Style::default().fg(Color::DarkGray)),
         Span::styled("n", Style::default().fg(Color::Yellow)),
         Span::styled("=NOUN  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::styled("e/Enter", Style::default().fg(Color::Yellow)),
         Span::styled("=ENTR  ", Style::default().fg(Color::DarkGray)),
         Span::styled("c", Style::default().fg(Color::Yellow)),
-        Span::styled("=CLR  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("=CLR", Style::default().fg(Color::DarkGray)),
+    ]);
+    let legend2 = Line::from(vec![
+        Span::styled("          ", Style::default().fg(Color::DarkGray)),
         Span::styled("p", Style::default().fg(Color::Yellow)),
         Span::styled("=PRO  ", Style::default().fg(Color::DarkGray)),
         Span::styled("r", Style::default().fg(Color::Yellow)),
@@ -348,5 +352,6 @@ fn render_keyboard(x: u16, y: u16, buf: &mut Buffer) {
         Span::styled("q", Style::default().fg(Color::Red)),
         Span::styled("=Beenden", Style::default().fg(Color::DarkGray)),
     ]);
-    buf.set_line(x, y + 12, &legend, 80);
+    buf.set_line(x, y + 12, &legend1, 80);
+    buf.set_line(x, y + 13, &legend2, 80);
 }
