@@ -61,7 +61,10 @@ mod tests {
             (lat - FRAC_PI_2).abs() < 1e-10,
             "Nordpol: lat = {lat}, erwartet π/2"
         );
-        assert!((lon - 0.0).abs() < 1e-10, "Nordpol: lon = {lon}, erwartet 0");
+        assert!(
+            (lon - 0.0).abs() < 1e-10,
+            "Nordpol: lon = {lon}, erwartet 0"
+        );
         assert!(alt > 0.0, "Nordpol: alt = {alt}, erwartet > 0");
     }
 

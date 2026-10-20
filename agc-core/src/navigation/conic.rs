@@ -10,7 +10,7 @@
 //! # AGC-Quelle
 //! `Comanche055/CONIC_SUBROUTINES.agc`, KEPLER- und LAMBERT-Routinen.
 
-use crate::alarm::{AlarmState, raise};
+use crate::alarm::{raise, AlarmState};
 use crate::navigation::state_vector::StateVector;
 use crate::types::{Met, Vec3};
 
@@ -63,11 +63,7 @@ pub fn stumpff_c2(psi: f64) -> f64 {
         let psi3 = psi2 * psi;
         let psi4 = psi3 * psi;
         let psi5 = psi4 * psi;
-        1.0 / 2.0
-            - psi / 24.0
-            + psi2 / 720.0
-            - psi3 / 40_320.0
-            + psi4 / 3_628_800.0
+        1.0 / 2.0 - psi / 24.0 + psi2 / 720.0 - psi3 / 40_320.0 + psi4 / 3_628_800.0
             - psi5 / 479_001_600.0
     }
 }
@@ -101,11 +97,7 @@ pub fn stumpff_c3(psi: f64) -> f64 {
         let psi3 = psi2 * psi;
         let psi4 = psi3 * psi;
         let psi5 = psi4 * psi;
-        1.0 / 6.0
-            - psi / 120.0
-            + psi2 / 5_040.0
-            - psi3 / 362_880.0
-            + psi4 / 39_916_800.0
+        1.0 / 6.0 - psi / 120.0 + psi2 / 5_040.0 - psi3 / 362_880.0 + psi4 / 39_916_800.0
             - psi5 / 6_227_020_800.0
     }
 }
@@ -207,9 +199,8 @@ pub fn kepler_step(sv: StateVector, dt: f64, mu: f64, alarm: &mut AlarmState) ->
     let c2 = stumpff_c2(psi);
     let c3 = stumpff_c3(psi);
 
-    let r_mag = chi * chi * c2
-        + (r0_dot_v0 / sqrt_mu) * chi * (1.0 - psi * c3)
-        + r0_mag * (1.0 - psi * c2);
+    let r_mag =
+        chi * chi * c2 + (r0_dot_v0 / sqrt_mu) * chi * (1.0 - psi * c3) + r0_mag * (1.0 - psi * c2);
 
     if r_mag.abs() < 1e-12 {
         raise(alarm, 0x0614);
@@ -258,13 +249,7 @@ pub fn kepler_step(sv: StateVector, dt: f64, mu: f64, alarm: &mut AlarmState) ->
 /// jeweils in m/s, oder `None` bei Nicht-Konvergenz.
 ///
 /// AGC source: `Comanche055/CONIC_SUBROUTINES.agc`, LAMBERT routine.
-pub fn lambert(
-    r1: Vec3,
-    r2: Vec3,
-    tof: f64,
-    mu: f64,
-    prograde: bool,
-) -> Option<(Vec3, Vec3)> {
+pub fn lambert(r1: Vec3, r2: Vec3, tof: f64, mu: f64, prograde: bool) -> Option<(Vec3, Vec3)> {
     if tof <= 0.0 || mu <= 0.0 {
         return None;
     }
@@ -282,9 +267,17 @@ pub fn lambert(
     // Transferrichtung: dm bestimmt das Vorzeichen von A
     let cross = r1.cross(r2);
     let dm = if prograde {
-        if cross.z >= 0.0 { 1.0 } else { -1.0 }
+        if cross.z >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        }
     } else {
-        if cross.z >= 0.0 { -1.0 } else { 1.0 }
+        if cross.z >= 0.0 {
+            -1.0
+        } else {
+            1.0
+        }
     };
 
     // Lancaster-Blanchard-Parameter A (Vallado Gl. 7-26)
@@ -483,7 +476,10 @@ mod tests {
         let psi = core::f64::consts::PI * core::f64::consts::PI;
         let expected = 2.0 / psi;
         let c2 = stumpff_c2(psi);
-        assert!((c2 - expected).abs() < 1e-12, "c2(π²) = {c2}, erwartet {expected}");
+        assert!(
+            (c2 - expected).abs() < 1e-12,
+            "c2(π²) = {c2}, erwartet {expected}"
+        );
     }
 
     #[test]
@@ -492,7 +488,10 @@ mod tests {
         let psi = -1.0_f64;
         let expected = (libm::cosh(1.0) - 1.0) / 1.0;
         let c2 = stumpff_c2(psi);
-        assert!((c2 - expected).abs() < 1e-12, "c2(-1) = {c2}, erwartet {expected}");
+        assert!(
+            (c2 - expected).abs() < 1e-12,
+            "c2(-1) = {c2}, erwartet {expected}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -523,7 +522,11 @@ mod tests {
         let sv1 = kepler_step(sv0, period, MU_EARTH, &mut alarm);
 
         // Kein Alarm
-        assert!(alarm.last().is_none(), "Kepler hat Alarm ausgelöst: {:?}", alarm.last());
+        assert!(
+            alarm.last().is_none(),
+            "Kepler hat Alarm ausgelöst: {:?}",
+            alarm.last()
+        );
 
         let delta = sv1.position - r0;
         let dist = delta.magnitude();
@@ -566,7 +569,8 @@ mod tests {
 
         // Halbe Hohmann-Transfer-Zeit
         let a_transfer = (r_leo + r_geo) / 2.0;
-        let t_half = core::f64::consts::PI * libm::sqrt(a_transfer * a_transfer * a_transfer / MU_EARTH);
+        let t_half =
+            core::f64::consts::PI * libm::sqrt(a_transfer * a_transfer * a_transfer / MU_EARTH);
 
         let sv0 = StateVector::new(
             Vec3::new(r_leo, 0.0, 0.0),
@@ -607,9 +611,7 @@ mod tests {
     #[test]
     fn lambert_arc120_leo() {
         let r: f64 = 6_678_000.0;
-        let period = 2.0
-            * core::f64::consts::PI
-            * libm::sqrt(r * r * r / MU_EARTH);
+        let period = 2.0 * core::f64::consts::PI * libm::sqrt(r * r * r / MU_EARTH);
 
         // 120°-Bogen auf der Kreisbahn
         let angle: f64 = 2.0 * core::f64::consts::PI / 3.0; // 120°
@@ -627,7 +629,11 @@ mod tests {
         let sv0 = StateVector::new(r1, v1, Met::from_seconds(0.0));
         let sv1 = kepler_step(sv0, tof, MU_EARTH, &mut alarm);
 
-        assert!(alarm.last().is_none(), "kepler_step Alarm nach Lambert: {:?}", alarm.last());
+        assert!(
+            alarm.last().is_none(),
+            "kepler_step Alarm nach Lambert: {:?}",
+            alarm.last()
+        );
 
         let diff = sv1.position - r2;
         let dist = diff.magnitude();
@@ -644,9 +650,7 @@ mod tests {
     #[test]
     fn lambert_180deg_returns_none() {
         let r: f64 = 6_678_000.0;
-        let period = 2.0
-            * core::f64::consts::PI
-            * libm::sqrt(r * r * r / MU_EARTH);
+        let period = 2.0 * core::f64::consts::PI * libm::sqrt(r * r * r / MU_EARTH);
 
         let r1 = Vec3::new(r, 0.0, 0.0);
         let r2 = Vec3::new(-r, 0.0, 0.0);
@@ -678,7 +682,11 @@ mod tests {
     fn kepler_step_non_convergence_raises_alarm() {
         let mut alarm = AlarmState::new();
         // Nullvektor als Position → sofortiger Alarm
-        let sv = StateVector::new(Vec3::ZERO, Vec3::new(0.0, 1000.0, 0.0), Met::from_seconds(0.0));
+        let sv = StateVector::new(
+            Vec3::ZERO,
+            Vec3::new(0.0, 1000.0, 0.0),
+            Met::from_seconds(0.0),
+        );
         let result = kepler_step(sv, 100.0, MU_EARTH, &mut alarm);
         assert_eq!(alarm.last(), Some(0x0614));
         // Rückgabe = Eingabe (unverändert)

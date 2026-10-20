@@ -340,25 +340,51 @@ agc-sim/
 
 ### Task 6 — Navigationsmathematik
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
-**Intent**: Die mathematische Kernschicht. Jede Funktion entspricht einer AGC-Routine und trägt die Pflicht-Cross-Reference.
+**Intent**: Die mathematische Kernschicht. Jede Funktion entspricht einer AGC-Routine und trägt die Pflicht-Cross-Reference. Tests werden auf zwei Ebenen verankert: analytisch berechenbare Bahnen (sofort) und hochwertige Referenzwerte aus einem Python-Skript (poliastro/Vallado).
+
+**Referenzwerte-Strategie**:
+
+Zwei Stufen — beide ins Repository:
+
+- **Stufe A — Analytisch**: Kreisbahn (`r = 6_678_000 m`, μ_erde) und Hohmann-Transfer haben geschlossene Lösungen. Nach einer vollen Kreisbahn-Periode muss `|r1 - r0| < 1 m` gelten; Δv eines Hohmann-Transfers ist analytisch exakt berechenbar. Diese Tests werden direkt in Rust hardcoded — keine externen Tools nötig.
+
+- **Stufe B — poliastro/Vallado**: Ein Python-Skript `tests/reference/generate_nav_refs.py` erzeugt `f64`-Testfälle mit `poliastro` (oder dem Buch *Fundamentals of Astrodynamics and Applications* von Vallado). Das Skript wird einmalig ausgeführt; die erzeugten Werte werden als Kommentare und Konstanten direkt in die Rust-Testdateien übernommen. Das Skript selbst bleibt im Repo, damit die Herkunft nachvollziehbar ist.
+
+- **Stufe C — yaAGC-Integration** (nicht Teil dieses Tasks): Kommt erst in Task 13. Erfordert lokalen yaAGC-Build und ein Test-Harness in `agc-sim`.
 
 **Expected Outcomes**:
-- Alle Module unter `agc-core::navigation` implementiert
+- `agc-core/src/navigation/` mit allen Modulen implementiert
 - Jede öffentliche Funktion dokumentiert: Eingangseinheiten, Ausgabeeinheiten, AGC-Quelldatei + Routine
-- Math-Tests enthalten je einen Referenzwert aus VirtualAGC-Referenz-Run
+- `tests/reference/generate_nav_refs.py` im Repository, kommentiert mit verwendeten Quellen
+- Alle Math-Tests tragen einen Kommentar mit Herkunft des Referenzwerts (analytisch oder Skript)
+- `cargo test -p agc-core` grün; Clippy sauber; embedded-Build erfolgreich
 
 **Todo List**:
-1. `state_vector.rs`, `conic.rs` (Kepler, Lambert)
-2. `orbital.rs` (Propagation mit J2-Term)
-3. `measurement.rs` (Kalman-Filter, W-Matrix 6D/9D)
-4. `ephemeris.rs`, `alignment.rs`, `powered_flight.rs`
-5. `time_of_fall.rs`, `lat_lon.rs`, `star_tables.rs`
-6. Tests mit VirtualAGC-Referenzwerten für jeden Schritt
-7. Clippy + Tests grün
+1. `tests/reference/generate_nav_refs.py` anlegen (poliastro/Vallado, Kreisbahn + Hohmann + Kepler-Schritt)
+2. Skript einmalig ausführen, `f64`-Werte in Rust-Testkonstanten übertragen
+3. `state_vector.rs` (StateVector-Typ, Skalierung: m, m/s, Centisekunden)
+4. `conic.rs`: `kepler_step()` (Stufe-A + Stufe-B-Test), `lambert()` (Stufe-B-Test)
+5. `orbital.rs`: Propagation mit J2-Störterm (Stufe-B-Test: RAAN-Drift)
+6. `measurement.rs`: Kalman-Filter, W-Matrix 6D/9D (analytische Konvergenz-Tests)
+7. `ephemeris.rs`: Mond- und Sonnenephemeris (Stufe-B-Referenzwert aus JPL/Vallado)
+8. `alignment.rs`: Sternvektoren → Gimbal-Winkel (Stufe-A: bekannte Sternpaare)
+9. `powered_flight.rs`: Brennzeitintegration (Stufe-A: konstanter Schub → analytisch)
+10. `time_of_fall.rs`, `lat_lon.rs`, `star_tables.rs` (Stufe-A wo möglich)
+11. `agc-core/src/lib.rs`: `pub mod navigation` ergänzen
+12. Clippy + Tests grün; embedded-Build grün; git commit
 
-**Relevant Context**: `docs/comanche055-architecture.md` §Navigationsmathematik, `input/virtualagc/Comanche055/CONIC_SUBROUTINES.agc`
+**Relevant Context**:
+- `docs/comanche055-architecture.md` §Navigationsmathematik
+- `input/virtualagc/Comanche055/CONIC_SUBROUTINES.agc` (KEPLER, LAMBERT, KEPPREP, DELTIME)
+- `input/virtualagc/Comanche055/ORBITAL_INTEGRATION.agc` (J2-Propagation)
+- `input/virtualagc/Comanche055/MEASUREMENT_INCORPORATION.agc` (Kalman-Filter)
+- `input/virtualagc/Comanche055/POWERED_FLIGHT_SUBROUTINES.agc`
+- `input/virtualagc/Comanche055/TIME_OF_FREE_FALL.agc`
+- `input/virtualagc/Comanche055/LATITUDE_LONGITUDE_SUBROUTINES.agc`
+- `input/virtualagc/Comanche055/STAR_TABLES.agc`
+- `input/virtualagc/Comanche055/LUNAR_AND_SOLAR_EPHEMERIDES_SUBROUTINES.agc`
 
 ---
 

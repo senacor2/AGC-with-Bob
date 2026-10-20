@@ -16,3 +16,6 @@ pub mod powered_flight;
 pub mod star_tables;
 pub mod state_vector;
 pub mod time_of_fall;
+
+pub use orbital::CentralBody;
+pub use state_vector::StateVector;

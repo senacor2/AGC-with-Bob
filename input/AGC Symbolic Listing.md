@@ -4540,6 +4540,7 @@ X = 1/4 - |MPAC<sub>dp</sub>|
 Perform "SICOM"
 MPAC = TS (MPAC+2 also loaded, not necessarily with significant bits)
 Proceed to "DANZIG"
+````
 
 ##### SICOM (Routine used by COS and SIN)
 
@@ -4606,7 +4607,163 @@ Den = E<sub>ADDRWD(dp)</sub>
 Proceed to "DIVCOM" (see BDDV)
 ````
 
+#### DMP, DMP* - Double Precision Multiply
 
+Order: 1 36 and 3 36 (indexed)
+
+Replace MPAC<sub>dp</sub> with product of MPAC<sub>dp</sub> and quantity
+at specified address.
+
+````
+AMAL = MPAC<sub>dp</sub>
+BMBL = E<sub>ADDRWD(dp)</sub>
+Perform "MULCOM"
+Proceed to "DANZIG"
+````
+
+##### MULCOM (Routine used by DMP, DMPR, etc.)
+
+Note 1. AMAL = AM + 2<sup>-14</sup> AL
+
+Note 2. BMBL = BM + 2<sup>-14</sup> BL
+
+Note 3. The hardware multiply order (MP Section IVC) gives a
+double precision answer, using single precision operands.
+
+TS = most significant half of (AL x BL)
+````
+MPAC<sub>tp</sub> = (AM x BM) + 2<sup>-14</sup> (AM x BL) + (AL + BM) + 2<sup>-28</sup> TS (carries propagate, no overflows)
+
+Return
+````
+
+#### DMPR, DMPR* - Double Precision Multiply and Round
+
+Order: 1 20 and 3 20 (indexed)
+
+Replace MPAC<sub>dp</sub> with product of MPAC<sub>dp</sub> and quantity
+at specified address, rounded to double precision. Set OVFIND if overflow.
+
+````
+AMAL = MPAC<sub>dp</sub>
+BMBL = E<sub>ADDRWD(dp)</sub>
+Perform "MULCOM" (see DMP)
+MODE = DP
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+If most significant part overflows:
+  Set OVFIND
+MPAC+2 = 0
+Proceed to "DANZIG"
+````
+
+#### DSQ - Double Precision Square Root
+
+Order: 0 14
+
+No Address
+
+Replace MPAC<sub>tp</sub> by the square of MPAC<sub>dp</sub>.
+
+````
+TS = most significant half of (MPAC+1 x MPAC+1)
+MPAC<sub>tp</sub> = MPAC+0 x MPAC+2<sup>-14</sup> (2 (MPAC+0 x MPAC+1)) + 2<sup>-28</sup> TS
+Proceed to "DANZIG"
+````
+
+#### DSU, DSU* - Double Precision Subtract
+
+Order: 1 32 and 3 32 (indexed)
+
+Replace MPAC<sub>dp</sub> by MPAC<sub>dp</sub> - quantity at specified address.
+Set OVFIND if overflow.
+
+````
+MPAC<sub>dp</sub> = MPAC<sub>dp</sub> - E<sub>ADDRWD(dp)</sub>
+If most significant half overflows:
+   MPAC<sub>dp</sub> = MPAC<sub>dp</sub> + 2<sup>28</sup> sgn MPAC+0 (see note with BDSU)
+   If above computation overflows:
+      Set OVFIND
+Proceed to "DANZIG"
+````
+
+#### ROUND - Round to Double Precision
+
+Order: 0 16
+
+No Address
+
+Replace MPAC<sub>dp</sub> with rounded version of MPAC<sub>tp</sub>, setting OVFIND if overflow.
+
+````
+MODE = DP
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+If most significant part overflows:
+   Set OVFIND
+MPAC+2 = 0
+Proceed to "DANZIG"
+````
+
+#### SIGN, SIGN* - Sign Function
+
+Order: 1 02 and 3 02 (indexed)
+
+If quantity at specified address (which may be in fixed or erasable memory) is
+negative non-zero, complement contents of MPAC (scalar or vector).
+
+````
+If E<sub>ADDRWD(dp)</sub> >= -0:
+   Proceed to "DANZIG"
+If MODE = VC:
+   MPAC<sub>vc</sub> = -MPAC<sub>vc</sub>
+   Proceed to "DANZIG"
+MPAC<sub>tp</sub> = - MPAC<sub>tp</sub>
+Proceed to "DANZIG"
+````
+
+#### SIN - Sine
+
+Order: 0 04
+
+No Address
+
+Replace MPAC<sub>dp</sub> with sine of MPAC<sub>dp</sub>. Input scaling is assumed
+B0 in units of revolutions, and output is with scale factor B1.
+
+````
+X = MPAC<sub>dp</sub>
+Perform "SICOM" (see COS)
+MPAC<sub>dp</sub> = TS (MPAC+2 also loaded, not necessarily with significant bits)
+Proceed to "DANZIG"
+````
+
+#### SQRT - Square Root Function
+
+Order: 0 02
+
+No Address
+
+Replace MPAC<sub>tp</sub> with square root of MPAC<sub>tp</sub> (most significant
+non-zero bits only), with scale factor one-half the scale of the scale factor
+of the original number.
+
+````
+Perform "SQRTSUB"
+If MPTEMP = 0:
+   proceed to "DANZIG"
+MPAC+2 = 0
+Shift MPAC<sub>tp</sub> right MPEMP places
+Proceed to "DANZIG"
+````
+
+##### SQRTSUB (Routing used by SQRT, UNIT etc)
+
+````
+MPTEMP = 0 (gives numbers of shifts for output)
+If |MPAC<sub>tp</sub>| = 0:
+   MPAC<sub>tp</sub> = +0
+   MPTEMP = 14
+   Return
+If 
 
 ### Vector Computation Operations
 

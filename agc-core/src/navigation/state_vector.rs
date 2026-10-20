@@ -78,7 +78,7 @@ mod tests {
         // T  = 5431.0100015223 s
         let pos = Vec3::new(6_678_000.0, 0.0, 0.0);
         let vel = Vec3::new(0.0, 7725.839_479_136_4, 0.0);
-        let t   = Met::from_seconds(5431.010_001_522_3);
+        let t = Met::from_seconds(5431.010_001_522_3);
 
         let sv = StateVector::new(pos, vel, t);
 
