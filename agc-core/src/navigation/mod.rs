@@ -7,5 +7,7 @@
 //! `Comanche055/ORBITAL_INTEGRATION.agc`, CHIEFTAN-Segment und verwandte Subroutinen.
 
 pub mod conic;
+pub mod ephemeris;
+pub mod measurement;
 pub mod orbital;
 pub mod state_vector;
