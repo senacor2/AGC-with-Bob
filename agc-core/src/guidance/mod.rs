@@ -15,6 +15,18 @@
 //!   aktuell gemessenen Passivfahrzeug-Position.
 //!   AGC-Quelle: `Comanche055/STABLE_ORBIT_-_P38-P39.agc`
 //!
+//! - **P40** — SPS Burn: Haupttriebwerksbrand (Ignition → Burn → Cutoff).
+//!   AGC-Quelle: `Comanche055/P40-P47.agc`
+//!
+//! - **P41** — Gimbal Motor Test: Pitch/Yaw-Gimbal-Sequenz vor dem Burn.
+//!   AGC-Quelle: `Comanche055/P40-P47.agc`
+//!
+//! - **P47** — Trim Maneuver: Post-Burn Δv-Restfehler-Berechnung.
+//!   AGC-Quelle: `Comanche055/P40-P47.agc`
+//!
+//! - **P51/P52/P53** — IMU-Alignment.
+//!   AGC-Quelle: `Comanche055/P51-P53.agc`
+//!
 //! # Hinweis für `no_std`
 //! Kein Heap, kein `static mut`. Phase-Table-Checkpoints sichern den
 //! Fortschritt restart-sicher ab.
@@ -24,6 +36,7 @@ use crate::restart::phase_table::PhaseTable;
 
 pub mod p11;
 pub mod p38_39;
+pub mod p40_47;
 pub mod p51_53;
 
 /// Gemeinsame Abstraktion für alle AGC-Guidance-Programme (P-Programme).

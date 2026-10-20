@@ -456,7 +456,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 8c — Guidance: SPS-Burn (P40–P47)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: SPS-Haupttriebwerk-Brennsequenz. Nutzt `navigation::powered_flight` für Δv-Berechnung und `dap::tvc` für Triebwerks-Vektorsteuerung während des Burns.
 
