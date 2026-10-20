@@ -7,6 +7,25 @@
 //!   nach dem Liftoff und propagiert den Zustandsvektor.
 //!   AGC-Quelle: `Comanche055/P11.agc`
 //!
+//! - **P20** — Rendezvous Navigation: aktualisiert den CSM-Zustandsvektor
+//!   via VHF-Ranging (skalarer Kalman-Update).
+//!   AGC-Quelle: `Comanche055/P20-P25.agc`
+//!
+//! - **P22** — Landmark Tracking: berechnet MGA aus Positions-/Geschwindigkeitsvektor.
+//!   AGC-Quelle: `Comanche055/P20-P25.agc`
+//!
+//! - **P30** — External ΔV Targeting: Apogee/Perigee + DELVSIN aus TIG + DELVSLV.
+//!   AGC-Quelle: `Comanche055/P30,P37.agc`
+//!
+//! - **P37** — Return to Earth: Lambert-Manöver zur Rückkehrbahn.
+//!   AGC-Quelle: `Comanche055/P30,P37.agc`
+//!
+//! - **P32** — CSI (Co-Elliptic Sequence Initiation): Δv in Horizontalebene.
+//!   AGC-Quelle: `Comanche055/P32-P33,_P72-P73.agc`
+//!
+//! - **P33** — CDH (Constant Delta Height): Δv zur Höhennivellierung.
+//!   AGC-Quelle: `Comanche055/P32-P33,_P72-P73.agc`
+//!
 //! - **P38** — Stable Orbit Insertion (SOI): berechnet das Lambert-Manöver
 //!   zur Annäherung an das passive Fahrzeug.
 //!   AGC-Quelle: `Comanche055/STABLE_ORBIT_-_P38-P39.agc`
@@ -35,6 +54,9 @@ use crate::navigation::state_vector::StateVector;
 use crate::restart::phase_table::PhaseTable;
 
 pub mod p11;
+pub mod p20_25;
+pub mod p30_37;
+pub mod p32_33;
 pub mod p38_39;
 pub mod p40_47;
 pub mod p51_53;

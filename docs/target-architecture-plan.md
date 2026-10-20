@@ -479,7 +479,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 8d — Guidance: Rendezvous-Programme (P20–P25, P30–P37, P32–P33)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Rendezvous-Navigations- und Manöver-Programme. Nutzen `navigation::measurement` (Kalman-Filter) für Radar-Tracking und `navigation::conic` für Manöver-Planung.
 
