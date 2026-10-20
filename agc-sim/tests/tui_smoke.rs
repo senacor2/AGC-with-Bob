@@ -62,10 +62,10 @@ fn v37e_no_crash() {
 
     // Verb=37 sollte gesetzt worden sein
     assert_eq!(
-        state.display.verb.val(),
+        state.ctx.display.verb.val(),
         37,
         "Verb nach V37E nicht 37, sondern {}",
-        state.display.verb.val()
+        state.ctx.display.verb.val()
     );
     // KEY_0 fehlt — kein Crash ist das Ziel
     let _ = KEY_0;

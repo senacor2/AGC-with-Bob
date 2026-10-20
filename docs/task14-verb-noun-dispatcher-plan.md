@@ -268,7 +268,7 @@ N93 (Delta Gyro Angles) benötigt.
 
 ## Sub-Task 6 — Simulator-Integration und End-to-End-Test
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: `agc-sim` verdrahtet den Dispatcher mit dem bestehenden DSKY-TUI-Loop.
 Keyboard-Events aus dem TUI werden über `process_key()` → `VerbDispatcher::dispatch()`

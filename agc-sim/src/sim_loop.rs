@@ -10,10 +10,11 @@
 //! Haupt-Loop (≈100 Hz / 10 ms pro Tick):
 //!   1. Tastatureingaben lesen (crossterm) → AGC-Keycode → SimDsky.push_key()
 //!   2. AGC-Core T4RUPT: t4rupt_tick(), write_to_dsky()
-//!   3. Tastendruck aus SimDsky-FIFO → process_key()
-//!   4. Physikschritt: RK4 dt=10 ms
-//!   5. IMU-Update (spezifische Kraft ≈ 0 im freien Fall)
-//!   6. TUI rendern
+//!   3. Tastendruck aus SimDsky-FIFO → process_key() → VerbDispatcher::dispatch()
+//!   4. Monitor-Modus (V16): NounResolver::resolve() → Display aktualisieren
+//!   5. Physikschritt: RK4 dt=10 ms
+//!   6. IMU-Update (spezifische Kraft ≈ 0 im freien Fall)
+//!   7. TUI rendern
 //! ```
 
 use std::time::{Duration, Instant};
@@ -25,8 +26,11 @@ use ratatui::{
 };
 
 use agc_core::alarm::AlarmState;
+use agc_core::context::AgcContext;
+use agc_core::display::dispatcher::VerbDispatcher;
+use agc_core::display::noun_resolver;
 use agc_core::display::verb_noun::{
-    process_key, t4rupt_tick, write_to_dsky, DisplayState, InputBuffer, KeyCode as AgcKey, KEY_0,
+    process_key, t4rupt_tick, write_to_dsky, InputBuffer, KeyCode as AgcKey, KeyEvent, KEY_0,
     KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_CLR, KEY_ENTER, KEY_KEY_REL,
     KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
 };
@@ -53,8 +57,10 @@ const TICK_DUR: Duration = Duration::from_millis(TICK_MS);
 
 /// Gesamtzustand des AGC-Simulators.
 pub struct SimState {
-    /// AGC Display- und Tastaturzustand.
-    pub display: DisplayState,
+    /// Zentraler AGC-Zustand: Display, Executive, PhaseTable, GuidanceContext.
+    /// Sub-Task 6: AgcContext ersetzt die separate DisplayState — Display wird
+    /// über `ctx.display` zugegriffen.
+    pub ctx: AgcContext,
     /// Tastatureingabe-Puffer (Verb/Noun-Eingabe).
     pub input_buf: InputBuffer,
     /// Program-Alarm-Zustand.
@@ -83,7 +89,7 @@ impl SimState {
         let velocity = Vec3::new(0.0, v_circ, 0.0);
 
         Self {
-            display: DisplayState::new(),
+            ctx: AgcContext::default(),
             input_buf: InputBuffer::new(),
             alarms: AlarmState::new(),
             traj: State::new(position, velocity, 0.0),
@@ -107,27 +113,88 @@ impl Default for SimState {
 
 /// Führt einen einzelnen Simulations-Tick durch (10 ms).
 ///
-/// 1. T4RUPT: Flash-Zähler dekrementieren, Display-Wort ausgeben.
-/// 2. Tastendruck aus SimDsky-FIFO verarbeiten.
-/// 3. RK4-Physik-Schritt.
-/// 4. IMU aktualisieren.
+/// 1. T4RUPT: Flash-Zähler dekrementieren.
+/// 2. Monitor-Modus (V16): NounResolver → Display aktualisieren.
+/// 3. Display an SimDsky-HAL ausgeben.
+/// 4. Tastendruck aus SimDsky-FIFO verarbeiten → VerbDispatcher.
+/// 5. RK4-Physik-Schritt.
+/// 6. IMU aktualisieren.
 pub fn sim_tick(state: &mut SimState) {
     let dt = TICK_MS as f64 / 1000.0;
 
     // --- T4RUPT ---
-    t4rupt_tick(&mut state.display);
-    write_to_dsky(&state.display, &mut state.dsky);
+    t4rupt_tick(&mut state.ctx.display);
+
+    // --- Monitor-Modus (V16): pro Tick NounResolver aufrufen ---
+    // Wenn der aktive Verb V16 ist, werden R1/R2/R3 aus dem GuidanceContext
+    // aktualisiert. Das entspricht dem AGC-MONITOR-Zyklus.
+    // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MONITOR label.
+    if state.ctx.display.verb.val() == 16 {
+        let noun = state.ctx.display.noun;
+        let [r1, r2, r3] = noun_resolver::resolve(noun, &state.ctx);
+        state.ctx.display.r1 = r1;
+        state.ctx.display.r2 = r2;
+        state.ctx.display.r3 = r3;
+    }
+
+    write_to_dsky(&state.ctx.display, &mut state.dsky);
 
     // --- Tastendruck aus SimDsky-FIFO verarbeiten ---
     // SimDsky implementiert DskyHal — read_keycode() leert den FIFO.
     while let Some(raw) = state.dsky.read_keycode() {
         if let Some(agc_key) = AgcKey::new(raw) {
-            process_key(
-                &mut state.display,
+            let event = process_key(
+                &mut state.ctx.display,
                 &mut state.input_buf,
                 agc_key,
                 &mut state.alarms,
             );
+
+            // Dispatcher aufrufen wenn Verb oder Noun per ENTER übernommen wurde
+            // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, VERBFAN.
+            match event {
+                KeyEvent::VerbSet(_) => {
+                    // Verb wurde gesetzt — Dispatcher auslösen mit aktuell
+                    // gecachtem Noun (Verb-only-Dispatch, z. B. V33/V34).
+                    let verb = state.ctx.display.verb;
+                    let noun = state.ctx.display.noun;
+                    VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+                }
+                KeyEvent::NounSet(_) => {
+                    // Noun gesetzt — Dispatcher auslösen (z. B. V06 N60).
+                    let verb = state.ctx.display.verb;
+                    let noun = state.ctx.display.noun;
+                    VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+                }
+                KeyEvent::Enter => {
+                    // Enter im Idle-Modus: V25-Lade-Sequenz abschließen (accept_load)
+                    // oder allgemeine Bestätigung.
+                    if state.ctx.display.verb.val() == 25 {
+                        // R1/R2/R3 aus dem aktuell angezeigten DisplayRegister lesen —
+                        // vereinfacht: Displayregister-Dezimalwert direkt weitergeben.
+                        let r1 = display_reg_to_i32(state.ctx.display.r1);
+                        let r2 = display_reg_to_i32(state.ctx.display.r2);
+                        let r3 = display_reg_to_i32(state.ctx.display.r3);
+                        VerbDispatcher::accept_load(r1, r2, r3, &mut state.ctx);
+                    }
+                }
+                KeyEvent::Proceed => {
+                    state.ctx.guidance.proceed_flag = true;
+                }
+                KeyEvent::Terminate => {
+                    state.ctx.guidance.terminate_flag = true;
+                }
+                KeyEvent::Recycle => {
+                    state.ctx.guidance.recycle_flag = true;
+                }
+                KeyEvent::Reset => {
+                    // RSET: Flags zurücksetzen
+                    state.ctx.guidance.proceed_flag = false;
+                    state.ctx.guidance.terminate_flag = false;
+                    state.ctx.guidance.recycle_flag = false;
+                }
+                KeyEvent::None | KeyEvent::OperatorError => {}
+            }
         }
     }
 
@@ -141,6 +208,22 @@ pub fn sim_tick(state: &mut SimState) {
     // COMP ACTY: leuchtet alle 40 Ticks kurz auf (ca. 400 ms Periode, 40 ms EIN)
     state.comp_acty = (state.tick % 40) < 4;
     state.tick += 1;
+}
+
+// ---------------------------------------------------------------------------
+// Hilfsfunktionen
+// ---------------------------------------------------------------------------
+
+/// Extrahiert den Dezimalwert aus einem [`agc_core::display::verb_noun::DisplayRegister`].
+///
+/// Gibt den `Decimal`-Wert zurück, oder 0 für `Blank`/`Octal`.
+#[inline]
+fn display_reg_to_i32(reg: agc_core::display::verb_noun::DisplayRegister) -> i32 {
+    use agc_core::display::verb_noun::DisplayRegister;
+    match reg {
+        DisplayRegister::Decimal(v) => v,
+        _ => 0,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +245,10 @@ pub fn render<B: ratatui::backend::Backend>(
             .split(area);
 
         // DSKY-Panel
-        frame.render_widget(DskyWidget::new(&state.display, state.comp_acty), chunks[0]);
+        frame.render_widget(
+            DskyWidget::new(&state.ctx.display, state.comp_acty),
+            chunks[0],
+        );
 
         // Rechte Spalte: Zustandsvektor oben, Alarm-Log unten
         let right_chunks = Layout::default()

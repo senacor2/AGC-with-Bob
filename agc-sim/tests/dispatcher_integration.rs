@@ -1,0 +1,258 @@
+//! Integrationstests: VerbDispatcher + NounResolver + SimState (Sub-Task 6).
+//!
+//! Prüft die vollständige Verdrahtung:
+//! Tastaturfolge → process_key() → VerbDispatcher::dispatch() → GuidanceContext → Display.
+//!
+//! # P61-Startsequenz
+//! Crew-Sequenz zum Starten von P61 (Entry Preparation):
+//! `VERB 3 7 ENTER NOUN 6 1 ENTER`
+//! → PROG = 61, active_program = 61, display.verb = 37, display.noun = 61.
+//!
+//! # TEI/LOI-Sequenz (P30 → P40)
+//! `VERB 3 7 ENTER NOUN 3 0 ENTER` → P30 aktiv
+//! `VERB 3 7 ENTER NOUN 4 0 ENTER` → P40 aktiv
+//!
+//! # Monitor-Modus (V16)
+//! Nach `VERB 1 6 ENTER NOUN 6 7 ENTER` wird V16N67 aktiv:
+//! R1/R2/R3 werden pro Tick aktualisiert (NounResolver → GuidanceContext).
+//!
+//! # V33/V34 (Proceed/Terminate)
+//! `VERB 3 3 ENTER` → proceed_flag gesetzt
+//! `VERB 3 4 ENTER` → terminate_flag gesetzt
+
+use agc_core::display::verb_noun::{
+    KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_ENTER, KEY_NOUN, KEY_VERB,
+};
+use agc_sim::sim_loop::{sim_tick, SimState};
+
+// ---------------------------------------------------------------------------
+// Hilfsfunktion: Tastenfolge einspielen
+// ---------------------------------------------------------------------------
+
+/// Schiebt eine Folge von AGC-Rohkeycodes in den SimDsky-FIFO und
+/// ruft pro Taste einen `sim_tick()` auf.
+fn press_keys(state: &mut SimState, keys: &[u8]) {
+    for &k in keys {
+        state.dsky.push_key(k);
+        sim_tick(state);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test 1: P61-Startsequenz — PROG=61 nach V37 N61 ENTER
+// ---------------------------------------------------------------------------
+
+/// Crew drückt `VERB 3 7 ENTER NOUN 6 1 ENTER`.
+/// Erwartet: display.major_mode = 61, active_program = 61, verb = 37, noun = 61.
+#[test]
+fn p61_start_sequence_sets_program_61() {
+    let mut state = SimState::new();
+
+    // VERB 3 7 ENTER — setzt Verb = 37
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+
+    // NOUN 6 1 ENTER — setzt Noun = 61, löst Dispatcher V37 aus
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+
+    // PROG-Anzeige (major_mode) muss 61 sein
+    assert_eq!(
+        state.ctx.display.major_mode.val(),
+        61,
+        "major_mode nach V37N61 erwartet 61, got {}",
+        state.ctx.display.major_mode.val()
+    );
+
+    // active_program im GuidanceContext muss gesetzt sein
+    assert_eq!(
+        state.ctx.guidance.active_program,
+        Some(61),
+        "active_program nach V37N61 erwartet Some(61), got {:?}",
+        state.ctx.guidance.active_program
+    );
+
+    // Verb und Noun im Display
+    assert_eq!(state.ctx.display.verb.val(), 37);
+    assert_eq!(state.ctx.display.noun.val(), 61);
+
+    // Flash muss nach Programm-Wechsel gestoppt sein
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash läuft nach V37N61 unerwartet"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 2: P30-Startsequenz — PROG=30 nach V37 N30 ENTER
+// ---------------------------------------------------------------------------
+
+/// Crew drückt `VERB 3 7 ENTER NOUN 3 0 ENTER`.
+/// Erwartet: PROG = 30, active_program = 30.
+#[test]
+fn p30_start_sequence_sets_program_30() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_3, KEY_0, KEY_ENTER]);
+
+    assert_eq!(
+        state.ctx.display.major_mode.val(),
+        30,
+        "major_mode nach V37N30 erwartet 30"
+    );
+    assert_eq!(state.ctx.guidance.active_program, Some(30));
+}
+
+// ---------------------------------------------------------------------------
+// Test 3: P40-Startsequenz — PROG=40 nach V37 N40 ENTER
+// ---------------------------------------------------------------------------
+
+/// Crew drückt `VERB 3 7 ENTER NOUN 4 0 ENTER`.
+/// Erwartet: PROG = 40, active_program = 40.
+#[test]
+fn p40_start_sequence_sets_program_40() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_4, KEY_0, KEY_ENTER]);
+
+    assert_eq!(state.ctx.display.major_mode.val(), 40);
+    assert_eq!(state.ctx.guidance.active_program, Some(40));
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: V06 N60 — DisplayOnce setzt Verb+Noun, kein Flash
+// ---------------------------------------------------------------------------
+
+/// `VERB 0 6 ENTER NOUN 6 0 ENTER` → V06 N60 aktiv, kein Blinken.
+#[test]
+fn v06n60_display_once_no_flash() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_0, KEY_6, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_0, KEY_ENTER]);
+
+    assert_eq!(state.ctx.display.verb.val(), 6, "Verb sollte 6 sein");
+    assert_eq!(state.ctx.display.noun.val(), 60, "Noun sollte 60 sein");
+    // DisplayOnce stoppt Flash
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash sollte bei V06 gestoppt sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 5: V16 N67 — Monitor-Modus aktiv
+// ---------------------------------------------------------------------------
+
+/// `VERB 1 6 ENTER NOUN 6 7 ENTER` → V16 N67 aktiv.
+/// Pro Tick wird NounResolver aufgerufen (kein Crash, kein Flash).
+#[test]
+fn v16n67_monitor_mode_no_crash() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_1, KEY_6, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_7, KEY_ENTER]);
+
+    assert_eq!(state.ctx.display.verb.val(), 16);
+    assert_eq!(state.ctx.display.noun.val(), 67);
+
+    // Mehrere Ticks: Monitor-Modus darf keinen Crash erzeugen
+    for _ in 0..20 {
+        sim_tick(&mut state);
+    }
+
+    // Flash ist bei V16 deaktiviert
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash sollte bei V16 deaktiviert sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: V33 (Proceed) — proceed_flag gesetzt
+// ---------------------------------------------------------------------------
+
+/// `VERB 3 3 ENTER` → guidance.proceed_flag = true.
+#[test]
+fn v33_proceed_sets_flag() {
+    let mut state = SimState::new();
+    assert!(!state.ctx.guidance.proceed_flag);
+
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_3, KEY_ENTER]);
+
+    assert!(
+        state.ctx.guidance.proceed_flag,
+        "proceed_flag nach V33 nicht gesetzt"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: V34 (Terminate) — terminate_flag gesetzt
+// ---------------------------------------------------------------------------
+
+/// `VERB 3 4 ENTER` → guidance.terminate_flag = true.
+#[test]
+fn v34_terminate_sets_flag() {
+    let mut state = SimState::new();
+    assert!(!state.ctx.guidance.terminate_flag);
+
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_4, KEY_ENTER]);
+
+    assert!(
+        state.ctx.guidance.terminate_flag,
+        "terminate_flag nach V34 nicht gesetzt"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: TEI-Sequenz P30 → P40 (Verb-Dispatcher Verkettung)
+// ---------------------------------------------------------------------------
+
+/// Simuliert einen vereinfachten TEI-Ablauf:
+/// 1. `V37 N30 ENTER` → P30 starten
+/// 2. `V06 N81 ENTER` → ΔV-Anzeige (nur Verb+Noun prüfen, kein P30-Zustand)
+/// 3. `V33 ENTER` → Proceed
+/// 4. `V37 N40 ENTER` → P40 starten (SPS-Burn)
+#[test]
+fn tei_sequence_p30_then_p40() {
+    let mut state = SimState::new();
+
+    // 1. P30 starten
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_3, KEY_0, KEY_ENTER]);
+    assert_eq!(state.ctx.guidance.active_program, Some(30));
+    assert_eq!(state.ctx.display.major_mode.val(), 30);
+
+    // 2. V06 N81 — ΔV-Anzeige (Verb=6, Noun=81)
+    press_keys(&mut state, &[KEY_VERB, KEY_0, KEY_6, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_8, KEY_1, KEY_ENTER]);
+    assert_eq!(state.ctx.display.verb.val(), 6);
+    assert_eq!(state.ctx.display.noun.val(), 81);
+
+    // 3. Proceed (V33)
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_3, KEY_ENTER]);
+    assert!(state.ctx.guidance.proceed_flag);
+
+    // 4. P40 starten (SPS-Burn)
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_4, KEY_0, KEY_ENTER]);
+    assert_eq!(state.ctx.guidance.active_program, Some(40));
+    assert_eq!(state.ctx.display.major_mode.val(), 40);
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: P52-Startsequenz (IMU Alignment)
+// ---------------------------------------------------------------------------
+
+/// `VERB 3 7 ENTER NOUN 5 2 ENTER` → PROG=52, active_program=52.
+#[test]
+fn p52_start_sequence_sets_program_52() {
+    let mut state = SimState::new();
+
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_5, KEY_2, KEY_ENTER]);
+
+    assert_eq!(state.ctx.display.major_mode.val(), 52);
+    assert_eq!(state.ctx.guidance.active_program, Some(52));
+    assert!(!state.ctx.display.flash_state);
+}
