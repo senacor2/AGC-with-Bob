@@ -48,11 +48,12 @@ pub const PHASE_INACTIVE: u8 = 0;
 
 /// Phasentabelle — statische, restart-sichere Fortschrittsverfolgung.
 ///
-/// Einheit: je Gruppe ein `u8`-Phasenwert (`0` = inaktiv).  
+/// Einheit: je Gruppe ein `u8`-Phasenwert (`0` = inaktiv).
 /// Skalierung: keine numerische Einheit; Werte sind Sprungziel-Indizes.
 ///
 /// # AGC-Quelle
 /// `Comanche055/PHASE_TABLE_MAINTENANCE.agc`, `PHASCHNG` routine.
+#[derive(Debug)]
 pub struct PhaseTable {
     phases: [u8; GROUP_COUNT],
 }

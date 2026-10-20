@@ -45,7 +45,7 @@ pub const MAX_PRIORITY: u8 = 31;
 /// Ein freier Slot wird durch `priority == 0` **und** `job_fn == None` markiert.
 ///
 /// AGC source: `Comanche055/EXECUTIVE.agc`, Core-Set-Struktur (pp. 1211–1212).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct JobEntry {
     /// Jobfunktion. `None` bedeutet: Slot frei.
     pub job_fn: Option<fn()>,
@@ -85,6 +85,7 @@ impl Default for JobEntry {
 /// Alle Slots sind statisch-groß (`[JobEntry; MAX_JOBS]`). Kein `Vec`, kein `Box`.
 ///
 /// AGC source: `Comanche055/EXECUTIVE.agc`, `NOVAC2`/`EJSCAN` routines (pp. 1212–1219).
+#[derive(Debug)]
 pub struct JobTable {
     slots: [JobEntry; MAX_JOBS],
 }

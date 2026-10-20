@@ -45,6 +45,7 @@ pub struct Refsmmat(pub [[f64; 3]; 3]);
 ///
 /// # AGC-Quelle
 /// `Comanche055/P51-P53.agc`, P51 routine, STARIND/STARAD variables.
+#[derive(Debug)]
 pub struct P51State {
     /// Aktuelle Phase (2 = erste Sternmessung, 3 = zweite Sternmessung,
     /// 4 = TRIAD berechnen, 0 = done).

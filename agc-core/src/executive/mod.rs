@@ -56,6 +56,7 @@ pub use waitlist::{WaitEntry, Waitlist, MAX_DELAY_CS, MAX_TASKS};
 ///
 /// # AGC-Quelle
 /// `Comanche055/EXECUTIVE.agc`, `NOVAC`/`FINDVAC`/`ENDOFJOB` routines (pp. 1208–1220).
+#[derive(Debug)]
 pub struct Executive {
     table: JobTable,
 }
