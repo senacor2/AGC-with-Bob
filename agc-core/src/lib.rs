@@ -14,5 +14,6 @@
 pub mod alarm;
 pub mod executive;
 pub mod hal;
+pub mod navigation;
 pub mod restart;
 pub mod types;
