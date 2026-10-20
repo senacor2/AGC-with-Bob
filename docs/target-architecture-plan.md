@@ -296,7 +296,7 @@ agc-sim/
 
 ### Task 4 — Alarm & Phase Table
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Grundinfrastruktur für Fehlerbehandlung und Restart-Sicherheit. Muss vor allen anderen agc-core-Modulen stehen, da jedes Modul `alarm::raise` verwenden kann.
 
