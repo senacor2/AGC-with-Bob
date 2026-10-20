@@ -410,7 +410,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 8a — Guidance: Orbit-Programme (P11, P38–P39)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Einstieg in die Guidance-Programme — die Orbit-Programme sind am wenigsten komplex und haben keine Abhängigkeit auf Rendezvous- oder Entry-Logik. Validiert das Executive-Integration-Pattern für alle späteren P-Programme.
 
