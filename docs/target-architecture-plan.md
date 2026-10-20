@@ -573,7 +573,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 11 — agc-sim: HAL-Implementierungen
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: Brücke zwischen agc-physics und agc-core: die HAL-Traits aus agc-core werden hier mit echten Simulationsdaten implementiert.
 
