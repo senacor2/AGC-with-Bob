@@ -24,6 +24,7 @@ use crate::restart::phase_table::PhaseTable;
 
 pub mod p11;
 pub mod p38_39;
+pub mod p51_53;
 
 /// Gemeinsame Abstraktion für alle AGC-Guidance-Programme (P-Programme).
 ///

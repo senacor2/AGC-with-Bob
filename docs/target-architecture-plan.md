@@ -434,7 +434,7 @@ Zwei Stufen — beide ins Repository:
 
 ### Task 8b — Guidance: IMU-Alignment (P51–P53)
 
-**Status**: `[ ] pending`
+**Status**: `[x] done`
 
 **Intent**: IMU-Neuausrichtung per Sternmessung. Baut auf `agc-core::navigation::alignment` und `agc-core::navigation::star_tables` auf. Schnittstelle zu `ImuHal::coarse_align()` + `fine_align()`.
 
