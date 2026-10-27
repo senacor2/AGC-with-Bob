@@ -154,7 +154,7 @@ erzeugt unnötige Rechenarbeit.
 
 ## Sub-Task 15.5 — accept_load: Eingabepuffer statt Display-Register lesen (iterativ)
 
-**Status:** `[~] Iteration A abgeschlossen (commit e63b838) — Iteration B pending`
+**Status:** `[x] done — Iteration A (commit e63b838) + Iteration B (commit cdbeeaf) abgeschlossen`
 
 ### Intent
 `VerbDispatcher::accept_load()` erhält in `sim_loop.rs` die Werte aus den
