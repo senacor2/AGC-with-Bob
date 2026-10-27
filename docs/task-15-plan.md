@@ -218,7 +218,7 @@ Eingabepuffern. Dieser Subtask führt einen dedizierten Dateneingabe-Puffer in
 
 ## Sub-Task 15.6 — V41/V42: Load-Prompt vor Alignment-Ausführung
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 Der AGC zeigt vor der Ausführung von V41 (Coarse Align) und V42 (Fine Align)
