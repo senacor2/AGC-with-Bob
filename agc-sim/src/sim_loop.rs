@@ -125,11 +125,10 @@ pub fn sim_tick(state: &mut SimState) {
     // --- T4RUPT ---
     t4rupt_tick(&mut state.ctx.display);
 
-    // --- Monitor-Modus (V16): pro Tick NounResolver aufrufen ---
-    // Wenn der aktive Verb V16 ist, werden R1/R2/R3 aus dem GuidanceContext
-    // aktualisiert. Das entspricht dem AGC-MONITOR-Zyklus.
+    // --- Monitor-Modus (V16): NounResolver 1x pro Sekunde aufrufen ---
+    // 1 Hz = 100 Ticks à 10 ms, entspricht AGC MONITOR-Zyklus.
     // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MONITOR label.
-    if state.ctx.display.verb.val() == 16 {
+    if state.ctx.display.verb.val() == 16 && state.tick.is_multiple_of(100) {
         let noun = state.ctx.display.noun;
         let [r1, r2, r3] = noun_resolver::resolve(noun, &state.ctx);
         state.ctx.display.r1 = r1;
