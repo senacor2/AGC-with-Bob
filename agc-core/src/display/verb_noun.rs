@@ -591,6 +591,23 @@ pub fn process_key(
                 state.lights.operator_error = true;
                 return KeyEvent::OperatorError;
             }
+            // Live-Anzeige: Zwischenwert sofort in state spiegeln, damit das
+            // DSKY-Widget die Ziffern während der Eingabe zeigt (nicht erst nach ENTER).
+            // AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, NUM/DSPIN-Routine.
+            let v = buf.to_value();
+            match buf.mode {
+                InputMode::Verb => {
+                    if let Some(vc) = VerbCode::new(v) {
+                        state.verb = vc;
+                    }
+                }
+                InputMode::Noun => {
+                    if let Some(nc) = NounCode::new(v) {
+                        state.noun = nc;
+                    }
+                }
+                InputMode::Idle => {}
+            }
             KeyEvent::None
         }
         KEY_ENTER => match buf.mode {
@@ -932,6 +949,52 @@ mod tests {
 
         assert_eq!(ev, KeyEvent::VerbSet(VerbCode(37)));
         assert!(!state.lights.operator_error);
+    }
+
+    // --- Sub-Task 15.1: Live-Anzeige der Verb/Noun-Zifferneingabe ---
+
+    #[test]
+    fn verb_live_display_after_one_digit() {
+        // Nach KEY_VERB + einer Ziffer (z.B. KEY_3) muss state.verb sofort den
+        // Teilwert 3 enthalten — nicht erst nach ENTER.
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_3), &mut alarm);
+
+        assert_eq!(state.verb, VerbCode(3));
+    }
+
+    #[test]
+    fn verb_live_display_after_two_digits() {
+        // Nach KEY_VERB + zwei Ziffern (KEY_3, KEY_7) muss state.verb den
+        // vollständigen Wert 37 enthalten — bereits vor ENTER.
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_3), &mut alarm);
+        assert_eq!(state.verb, VerbCode(3));
+
+        process_key(&mut state, &mut buf, make_key(KEY_7), &mut alarm);
+        assert_eq!(state.verb, VerbCode(37));
+    }
+
+    #[test]
+    fn noun_live_display_after_one_digit() {
+        // Nach KEY_NOUN + einer Ziffer (z.B. KEY_6) muss state.noun sofort den
+        // Teilwert 6 enthalten — nicht erst nach ENTER.
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        process_key(&mut state, &mut buf, make_key(KEY_NOUN), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_6), &mut alarm);
+
+        assert_eq!(state.noun, NounCode(6));
     }
 
     #[test]
