@@ -278,7 +278,7 @@ nachdem die Crew die Eingabe mit V33 (Proceed) oder ENTER bestätigt hat.
 
 ## Sub-Task 15.7 — N40: R1/R2-Belegung korrigieren (VG/TGO → TTOGO/VGDISP)
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 Die AGC-Referenz definiert N40 als Mixed Noun mit:
