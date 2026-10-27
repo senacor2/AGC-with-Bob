@@ -128,7 +128,7 @@ den Nullvektor enthält.
 
 ## Sub-Task 15.4 — Monitor-Rate: 1 Hz statt 100 Hz
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 Der AGC aktualisiert Monitor-Anzeigen (V11–V17) einmal pro Sekunde (100 Ticks
