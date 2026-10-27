@@ -82,6 +82,9 @@ pub struct SimState {
     pub load_r2: i32,
     /// Roher Eingabepuffer für R3 (entspricht AGC ZREG).
     pub load_r3: i32,
+    /// Index des nächsten zu befüllenden Lade-Registers (0=R1, 1=R2, 2=R3).
+    /// Wird bei V25-Dateneingabe nach jeder Noun-Bestätigung inkrementiert.
+    pub load_reg_idx: u8,
 }
 
 impl SimState {
@@ -107,6 +110,7 @@ impl SimState {
             load_r1: 0,
             load_r2: 0,
             load_r3: 0,
+            load_reg_idx: 0,
         }
     }
 }
@@ -181,12 +185,45 @@ pub fn sim_tick(state: &mut SimState) {
                         let noun = state.ctx.display.noun;
                         VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
                     }
+                    // Flash verlassen → Eingabe-Sequenz abbrechen, Index zurücksetzen.
+                    if !state.ctx.display.flash_state {
+                        state.load_reg_idx = 0;
+                    }
                 }
                 KeyEvent::NounSet(_) => {
-                    // Noun gesetzt — Dispatcher auslösen (z. B. V06 N60, V16 N67).
                     let verb = state.ctx.display.verb;
                     let noun = state.ctx.display.noun;
-                    VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+
+                    // Im Flash-Modus mit V25: Noun-Eingabe als Datenwert in
+                    // load_r1/r2/r3 übernehmen, Index weiterschalten.
+                    // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc,
+                    // ENTR/NOUNP-Zweig bei aktiver LOAD-Sequenz.
+                    if state.ctx.display.flash_state && verb.val() == 25 {
+                        let raw = noun.val() as i32;
+                        match state.load_reg_idx {
+                            0 => {
+                                state.load_r1 = raw;
+                                state.ctx.display.r1 =
+                                    agc_core::display::verb_noun::DisplayRegister::Decimal(raw);
+                            }
+                            1 => {
+                                state.load_r2 = raw;
+                                state.ctx.display.r2 =
+                                    agc_core::display::verb_noun::DisplayRegister::Decimal(raw);
+                            }
+                            _ => {
+                                state.load_r3 = raw;
+                                state.ctx.display.r3 =
+                                    agc_core::display::verb_noun::DisplayRegister::Decimal(raw);
+                            }
+                        }
+                        if state.load_reg_idx < 2 {
+                            state.load_reg_idx += 1;
+                        }
+                    } else {
+                        // Normaler Modus: Dispatcher auslösen (z. B. V06 N60, V16 N67).
+                        VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+                    }
                 }
                 KeyEvent::Enter => {
                     // Enter im Idle-Modus: V25-Lade-Sequenz abschließen (accept_load)
