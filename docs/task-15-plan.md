@@ -46,7 +46,7 @@ unverändert — das DSKY-Widget zeigt daher die alten Werte, bis ENTER gedrück
 
 ## Sub-Task 15.2 — V37: zweistufiger Eingabeablauf (Flash → Programmnummer → Start)
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 V37 (`MMCHANG`) verlangt im AGC einen zweistufigen Ablauf:
