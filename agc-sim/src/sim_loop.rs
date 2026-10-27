@@ -163,10 +163,11 @@ pub fn sim_tick(state: &mut SimState) {
             // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, VERBFAN.
             match event {
                 KeyEvent::VerbSet(v) => {
-                    // Nur sofort dispatchen wenn Verb keinen Noun braucht (V32/V33/V34).
-                    // V06/V16/V25/V37/V41/V42 warten auf NounSet.
+                    // Sofort dispatchen wenn Verb keinen Noun braucht (V32/V33/V34)
+                    // oder beim ersten ENTER nach V37 (RequestProgram → Flash einschalten).
+                    // V06/V16/V25/V41/V42 warten auf NounSet.
                     let v_raw = v.val();
-                    if matches!(v_raw, 32..=34) {
+                    if matches!(v_raw, 32..=34 | 37) {
                         let verb = state.ctx.display.verb;
                         let noun = state.ctx.display.noun;
                         VerbDispatcher::dispatch(verb, noun, &mut state.ctx);

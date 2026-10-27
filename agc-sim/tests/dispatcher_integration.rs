@@ -367,3 +367,76 @@ fn v34_verbset_immediate_dispatch() {
         "terminate_flag nach V34 ENTER muss true sein"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test 14: V37 erster ENTER → Flash aktiv, kein Programm gestartet
+// ---------------------------------------------------------------------------
+
+/// Crew drückt `VERB 3 7 ENTER` (ohne Noun).
+///
+/// Erwartet:
+/// - `display.flash_state == true` (Flash aktiv — wartet auf Programmnummer)
+/// - `active_program == None` (kein Programm gestartet)
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM label.
+#[test]
+fn v37_first_enter_activates_flash() {
+    let mut state = SimState::new();
+
+    // V37 ENTER — erster Schritt: RequestProgram → Flash einschalten
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+
+    // Flash muss aktiv sein (wartet auf Programm-Nummer)
+    assert!(
+        state.ctx.display.flash_state,
+        "flash_state nach V37 ENTER muss true sein (warte auf Programmnummer)"
+    );
+
+    // Kein Programm gestartet
+    assert_eq!(
+        state.ctx.guidance.active_program, None,
+        "active_program nach V37 ENTER allein muss None sein"
+    );
+
+    // Verb muss auf 37 gesetzt sein
+    assert_eq!(
+        state.ctx.display.verb.val(),
+        37,
+        "Verb nach V37 ENTER muss 37 sein"
+    );
+}
+
+/// Vollständiger zweistufiger V37-Ablauf:
+/// 1. `VERB 3 7 ENTER` → Flash aktiv
+/// 2. `NOUN 6 1 ENTER` → P61 gestartet, Flash gestoppt
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM/MMCHANG.
+#[test]
+fn v37_two_step_starts_program_and_stops_flash() {
+    let mut state = SimState::new();
+
+    // Schritt 1: V37 ENTER — Flash einschalten
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
+    assert!(
+        state.ctx.display.flash_state,
+        "Nach V37 ENTER muss Flash aktiv sein"
+    );
+
+    // Schritt 2: NOUN 6 1 ENTER — Programm starten
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+
+    assert_eq!(
+        state.ctx.display.major_mode.val(),
+        61,
+        "major_mode nach V37→N61 muss 61 sein"
+    );
+    assert_eq!(
+        state.ctx.guidance.active_program,
+        Some(61),
+        "active_program nach V37→N61 muss Some(61) sein"
+    );
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach Programm-Start gestoppt sein"
+    );
+}

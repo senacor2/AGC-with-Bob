@@ -50,6 +50,14 @@ pub enum VerbAction {
     /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, MMCHANG label.
     ProgramChange(u8),
 
+    /// Erster ENTER nach V37 — fordert Programmnummer an.
+    ///
+    /// Flash einschalten, auf Noun (Programm-Nummer) warten.
+    /// Zweiter Schritt (Noun gesetzt) wird in `dispatch()` separat abgefangen.
+    ///
+    /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM/MMCHANG label.
+    RequestProgram,
+
     /// Lade-Verb: fordert Crew-Eingabe in R1/R2/R3 (V25 — Comp Acty Flash).
     /// Startet VERB/NOUN-Blinken, bis Crew ENTER drückt.
     ///
@@ -126,10 +134,11 @@ const VERB_TABLE: [VerbAction; 40] = {
     // VB34: Terminate
     // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, TERMKEY.
     t[34] = VerbAction::Terminate;
-    // VB37: Change Major Mode — gesonderte Logik in dispatch()
-    // (Programm-Nummer wird zur Dispatch-Zeit aus dem Noun gelesen)
-    // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MMCHANG label.
-    t[37] = VerbAction::Noop; // Platzhalter; dispatch() erkennt V37 gesondert
+    // VB37: Change Major Mode — zweistufiger Ablauf (REQMM → MMCHANG)
+    // Erster ENTER: Flash einschalten, auf Programm-Nummer warten (RequestProgram).
+    // Zweiter Aufruf (NounSet mit noun≠0): dispatch_v37() via gesonderten Zweig.
+    // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, REQMM/MMCHANG label.
+    t[37] = VerbAction::RequestProgram;
     t
 };
 
@@ -336,9 +345,10 @@ impl VerbDispatcher {
 
         let v = verb.val() as usize;
 
-        // V37: Change Program — gesonderte Logik (Noun = Programm-Nummer)
+        // V37 zweiter Schritt: Noun wurde nach dem Flash-Prompt eingegeben (noun≠0).
+        // Dieser Zweig feuert beim NounSet-Event, nachdem RequestProgram Flash aktiviert hat.
         // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MMCHANG label.
-        if v == 37 {
+        if v == 37 && noun.val() != 0 {
             Self::dispatch_v37(noun, ctx);
             return;
         }
@@ -431,6 +441,12 @@ impl VerbDispatcher {
                 ctx.display.flash_state = false;
                 ctx.display.flash_counter = 0;
                 ctx.display.lights.verb_noun_flash = false;
+            }
+
+            // V37 erster Schritt: Flash einschalten, auf Programm-Nummer warten.
+            // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, REQMM label.
+            VerbAction::RequestProgram => {
+                start_flash(&mut ctx.display);
             }
 
             VerbAction::ProgramChange(_) | VerbAction::Noop => {}
