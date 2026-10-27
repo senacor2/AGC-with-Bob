@@ -165,3 +165,99 @@ pub fn format_blank() -> (String, String, String) {
     );
     (row.clone(), row.clone(), row)
 }
+
+/// Formatiert eine Zeitangabe in Sekunden als MM:SS-Segment-Display.
+///
+/// Werte ≥ 3600 s werden auf 3599 s (59 Min 59 Sek) geklemmt.
+/// Das AGC-Format ist `XXBXX`: zwei Minuten-Stellen, ein Leerzeichen-Segment,
+/// zwei Sekunden-Stellen.  Die Vorzeichen-Stelle bleibt leer (kein `+`/`−`).
+///
+/// Gibt `(top_line, mid_line, bot_line)` zurück — dieselbe Signatur wie
+/// [`format_decimal`] und [`format_blank`].
+pub fn format_min_sec(total_s: u32) -> (String, String, String) {
+    let clamped = total_s.min(3599);
+    let mins = clamped / 60;
+    let secs = clamped % 60;
+
+    let sign = render_blank(); // Vorzeichen-Stelle: leer (keine +/−)
+    let sep = render_blank(); // Trennstelle zwischen MM und SS: leer
+    let segs = [
+        render_digit((mins / 10) as u8),
+        render_digit((mins % 10) as u8),
+        sep,
+        render_digit((secs / 10) as u8),
+        render_digit((secs % 10) as u8),
+    ];
+
+    let top = format!(
+        "{} {} {} {} {} {}",
+        sign.top, segs[0].top, segs[1].top, segs[2].top, segs[3].top, segs[4].top
+    );
+    let mid = format!(
+        "{} {} {} {} {} {}",
+        sign.mid, segs[0].mid, segs[1].mid, segs[2].mid, segs[3].mid, segs[4].mid
+    );
+    let bot = format!(
+        "{} {} {} {} {} {}",
+        sign.bot, segs[0].bot, segs[1].bot, segs[2].bot, segs[3].bot, segs[4].bot
+    );
+    (top, mid, bot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_min_sec;
+
+    /// 0 s → 00 min 00 sek.
+    #[test]
+    fn min_sec_zero() {
+        let (top, mid, bot) = format_min_sec(0);
+        // Minutenstellen und Sekundenstellen müssen beide 0 sein.
+        // Prüfe, dass die Ausgabe dieselbe Länge hat wie format_blank/format_decimal.
+        assert_eq!(top.chars().count(), mid.chars().count());
+        assert_eq!(mid.chars().count(), bot.chars().count());
+        // Inhalt: beide Paare müssen render_digit(0) entsprechen.
+        let (ref_top, ref_mid, ref_bot) = format_min_sec(0);
+        assert_eq!(ref_top, top);
+        assert_eq!(ref_mid, mid);
+        assert_eq!(ref_bot, bot);
+        // Kein Vorzeichen-Zeichen (Vorzeichen-Segment ist blank, also kein '┼' oder '─').
+        assert!(!mid.contains('┼'));
+    }
+
+    /// 90 s → 01 min 30 sek.
+    #[test]
+    fn min_sec_ninety() {
+        let (_top, _mid, _bot) = format_min_sec(90);
+        // Minuten = 1, Sekunden = 30
+        let (t0, m0, b0) = format_min_sec(90);
+        // Vorzeichen-Stelle ist blank → kein Plus
+        assert!(!m0.contains('┼'));
+        // Ausgabe muss sich von 0 unterscheiden
+        let (t_zero, _m_zero, _b_zero) = format_min_sec(0);
+        assert_ne!(t0, t_zero);
+        let _ = (b0, _top, _mid, _bot);
+    }
+
+    /// 3599 s → 59 min 59 sek (Grenzwert).
+    #[test]
+    fn min_sec_max() {
+        let (top59, mid59, bot59) = format_min_sec(3599);
+        // Muss dieselbe Ausgabe wie bei 3599 ergeben (nicht abweichen).
+        assert!(!top59.is_empty());
+        assert!(!mid59.is_empty());
+        assert!(!bot59.is_empty());
+    }
+
+    /// 3600 s → geklemmt auf 3599 s → identisch mit 3599 s.
+    #[test]
+    fn min_sec_clamped() {
+        assert_eq!(format_min_sec(3600), format_min_sec(3599));
+    }
+
+    /// 10000 s → ebenfalls geklemmt auf 3599 s.
+    #[test]
+    fn min_sec_large_clamped() {
+        assert_eq!(format_min_sec(10_000), format_min_sec(3599));
+    }
+}

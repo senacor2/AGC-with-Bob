@@ -128,6 +128,13 @@ pub enum DisplayRegister {
     Decimal(i32),
     /// Hochpräziser Dezimalwert: Ganzzahlanteil + Nachkommaanteil.
     DecimalHighPrec(i32, i32),
+    /// Zeit im Format MM:SS.
+    ///
+    /// Wert ist Gesamtzeit in Sekunden (max. 3599 s = 59 Min 59 Sek).
+    /// Werte ≥ 3600 s werden auf 3599 s geklemmt.
+    ///
+    /// AGC-Format: `XXBXX` (Minuten zweistellig, Leerzeichen, Sekunden zweistellig).
+    MinSec(u32),
 }
 
 // ---------------------------------------------------------------------------

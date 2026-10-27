@@ -95,6 +95,8 @@ pub struct P40State {
     pub t_burn: f64,
     /// Seit Ignition verstrichene Zeit [s] — akkumuliert in Phase 3.
     pub t_elapsed: f64,
+    /// Akkumuliertes Delta-V seit Ignition [m/s] — DVTOTAL (N40 R3).
+    pub dv_accumulated: f64,
 }
 
 impl P40State {
@@ -114,6 +116,7 @@ impl P40State {
             mass,
             t_burn: 0.0,
             t_elapsed: 0.0,
+            dv_accumulated: 0.0,
         }
     }
 }

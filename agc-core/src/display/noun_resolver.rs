@@ -11,7 +11,7 @@
 //! | N17  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]     | P52 CPHIX        |
 //! | N20  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]     | P51/P52 CDU      |
 //! | N22  | THETAD1 [0.01°]  | THETAD2 [0.01°]  | THETAD3 [0.01°] | P51/P52 Ziel     |
-//! | N40  | VG [m/s]         | TGO [s]          | —               | P40 Burn         |
+//! | N40  | TTOGO [MM:SS]    | VG [m/s]         | DVTOTAL [m/s]   | P40 Burn         |
 //! | N44  | HAPO [km]        | HPER [km]        | —               | P30/P37          |
 //! | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°] | P61 Entry        |
 //! | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]    | P61/P62 Ziel     |
@@ -223,11 +223,11 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
         }
 
         // ------------------------------------------------------------------
-        // N40 — SPS-Burn Monitor: VG (Velocity-to-Gain), TGO (Time-to-Go)
+        // N40 — SPS-Burn Monitor: TTOGO, VGDISP, DVTOTAL
         // P40 SPS-Burn.
-        // R1 = VG = delta_v_target [m/s] (gewünschtes Δv, Anzeige des Ziels)
-        // R2 = TGO = t_burn − t_elapsed [s] (verbleibende Brennzeit)
-        // R3 = Blank (TIG wird separat über N33 angezeigt)
+        // R1 = TTOGO = Restbrennzeit in MM:SS (keine Eingabe, nur Anzeige)
+        // R2 = VGDISP = delta_v_target [m/s] (Velocity-to-Go)
+        // R3 = DVTOTAL = dv_accumulated [m/s] (akkumuliertes Delta-V)
         //
         // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N40 (VG/TGO/DELTAV).
         // ------------------------------------------------------------------
@@ -235,11 +235,11 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
             let Some(ref p40) = ctx.guidance.p40 else {
                 return [DisplayRegister::Blank; 3];
             };
-            let tgo = (p40.t_burn - p40.t_elapsed).max(0.0);
+            let tgo_s = (p40.t_burn - p40.t_elapsed).max(0.0) as u32;
             [
+                DisplayRegister::MinSec(tgo_s),
                 DisplayRegister::Decimal(mps_to_display(p40.delta_v_target)),
-                DisplayRegister::Decimal(s_to_display(tgo)),
-                DisplayRegister::Blank,
+                DisplayRegister::Decimal(mps_to_display(p40.dv_accumulated)),
             ]
         }
 
@@ -536,7 +536,7 @@ mod tests {
     // N40 — SPS-Burn Monitor
     // -----------------------------------------------------------------------
 
-    /// N40 mit aktivem P40-State → VG und TGO korrekt skaliert.
+    /// N40 mit aktivem P40-State → TTOGO (MM:SS), VGDISP und DVTOTAL korrekt.
     ///
     /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N40.
     #[test]
@@ -549,17 +549,18 @@ mod tests {
             thrust: 97_855.0,
             mass: 28_000.0,
             t_burn: 90.0,
-            t_elapsed: 25.0, // TGO = 65 s
+            t_elapsed: 25.0,       // TGO = 65 s
+            dv_accumulated: 150.0, // 150 m/s akkumuliert
         });
 
         let [r1, r2, r3] = resolve(noun(40), &ctx);
 
-        // R1 = VG in m/s: 600
-        assert_eq!(r1, DisplayRegister::Decimal(600));
-        // R2 = TGO in s: 90 − 25 = 65
-        assert_eq!(r2, DisplayRegister::Decimal(65));
-        // R3 = Blank
-        assert_eq!(r3, DisplayRegister::Blank);
+        // R1 = TTOGO in MM:SS: 65 s → 1 Min 5 Sek
+        assert_eq!(r1, DisplayRegister::MinSec(65));
+        // R2 = VGDISP in m/s: 600
+        assert_eq!(r2, DisplayRegister::Decimal(600));
+        // R3 = DVTOTAL in m/s: 150
+        assert_eq!(r3, DisplayRegister::Decimal(150));
     }
 
     /// N40 ohne aktiven P40-State → Blank.
@@ -572,7 +573,7 @@ mod tests {
         assert_eq!(r3, DisplayRegister::Blank);
     }
 
-    /// N40 wenn t_elapsed > t_burn → TGO klemmt auf 0 (kein negativer Wert).
+    /// N40 wenn t_elapsed > t_burn → TTOGO klemmt auf 0 s (MM:SS = 00:00).
     #[test]
     fn n40_tgo_clamps_to_zero_after_cutoff() {
         let mut ctx = AgcContext::default();
@@ -584,11 +585,12 @@ mod tests {
             mass: 28_000.0,
             t_burn: 50.0,
             t_elapsed: 55.0, // überschritten
+            dv_accumulated: 0.0,
         });
 
-        let [_r1, r2, _r3] = resolve(noun(40), &ctx);
-        // TGO darf nicht negativ sein
-        assert_eq!(r2, DisplayRegister::Decimal(0));
+        let [r1, _r2, _r3] = resolve(noun(40), &ctx);
+        // TTOGO darf nicht negativ sein → MinSec(0)
+        assert_eq!(r1, DisplayRegister::MinSec(0));
     }
 
     // -----------------------------------------------------------------------
