@@ -12,7 +12,7 @@
 //! | N20  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]     | P51/P52 CDU      |
 //! | N22  | THETAD1 [0.01°]  | THETAD2 [0.01°]  | THETAD3 [0.01°] | P51/P52 Ziel     |
 //! | N40  | TTOGO [MM:SS]    | VG [m/s]         | DVTOTAL [m/s]   | P40 Burn         |
-//! | N44  | HAPO [km]        | HPER [km]        | —               | P30/P37          |
+//! | N44  | HAPO [km]        | HPER [km]        | TFF [MM:SS]     | P30/P37          |
 //! | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°] | P61 Entry        |
 //! | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]    | P61/P62 Ziel     |
 //! | N63  | RTGO [km]        | VIO [m/s]        | TFE [s]         | P61 Guidance     |
@@ -127,7 +127,7 @@ fn deg_to_millideg(deg: f64) -> i32 {
 /// | N20  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]      |
 /// | N22  | THETAD1 [0.01°]  | THETAD2 [0.01°]  | THETAD3 [0.01°]  |
 /// | N40  | VG [m/s]         | TGO [s]          | — (Blank)        |
-/// | N44  | HAPO [km]        | HPER [km]        | — (Blank)        |
+/// | N44  | HAPO [km]        | HPER [km]        | TFF [MM:SS]      |
 /// | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°]  |
 /// | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]     |
 /// | N63  | RTGO [km]        | VIO [m/s]        | TFE [s]          |
@@ -244,11 +244,11 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
         }
 
         // ------------------------------------------------------------------
-        // N44 — Orbit-Parameter: HAPO, HPER
+        // N44 — Orbit-Parameter: HAPO, HPER, TFF
         // P30 External ΔV Targeting / P37 Return-to-Earth.
         // R1 = HAPO (Apogee-Höhe nach Burn) [km]
         // R2 = HPER (Perigee-Höhe nach Burn) [km]
-        // R3 = Blank (TFF nicht in P30Output vorhanden)
+        // R3 = TFF  (Zeit bis Atmosphäreneintritt, MM:SS)
         //
         // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N44 (HAPO/HPER/TFF).
         // ------------------------------------------------------------------
@@ -259,7 +259,8 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
             [
                 DisplayRegister::Decimal(m_to_km_display(p30.h_apo)),
                 DisplayRegister::Decimal(m_to_km_display(p30.h_per)),
-                DisplayRegister::Blank,
+                // TFF: Zeit bis Atmosphäreneintritt (MM:SS) — Berechnung ausstehend (TFFCONMU)
+                DisplayRegister::MinSec(p30.tff_s.max(0.0) as u32),
             ]
         }
 
@@ -607,6 +608,7 @@ mod tests {
             delta_v_ref: Vec3::new(100.0, 0.0, 0.0),
             h_apo: 400_000.0, // 400 km Apogee
             h_per: 185_000.0, // 185 km Perigee
+            tff_s: 0.0,
         });
 
         let [r1, r2, r3] = resolve(noun(44), &ctx);
@@ -615,8 +617,8 @@ mod tests {
         assert_eq!(r1, DisplayRegister::Decimal(400));
         // R2 = HPER in km: 185
         assert_eq!(r2, DisplayRegister::Decimal(185));
-        // R3 = Blank (TFF nicht in P30Output)
-        assert_eq!(r3, DisplayRegister::Blank);
+        // R3 = TFF als MinSec (0 s → MinSec(0))
+        assert_eq!(r3, DisplayRegister::MinSec(0));
     }
 
     /// N44 ohne P30-State → Blank.
@@ -973,6 +975,7 @@ mod tests {
             delta_v_ref: Vec3::new(120.5, -45.0, 8.7),
             h_apo: 400_000.0,
             h_per: 185_000.0,
+            tff_s: 0.0,
         });
 
         let [r1, r2, r3] = resolve(noun(81), &ctx);

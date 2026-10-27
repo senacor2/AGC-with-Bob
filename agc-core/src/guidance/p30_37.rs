@@ -149,6 +149,7 @@ pub struct P30Input {
 /// | `delta_v_ref`  | m/s     | Δv in ECI-Referenzkoordinaten (DELVSIN)               |
 /// | `h_apo`        | m       | Apogee-Höhe nach dem Manöver über R_eq                |
 /// | `h_per`        | m       | Perigee-Höhe nach dem Manöver über R_eq               |
+/// | `tff_s`        | s       | Zeit bis Atmosphäreneintritt (TFF, TFFCONMU) — noch nicht berechnet |
 ///
 /// AGC source: `Comanche055/P30,P37.agc`, S30.1-Subroutine.
 #[derive(Copy, Clone, Debug)]
@@ -159,6 +160,11 @@ pub struct P30Output {
     pub h_apo: f64,
     /// Perigee-Höhe über Äquatorialradius nach dem Manöver [m].
     pub h_per: f64,
+    /// Zeit bis Atmosphäreneintritt (Time to Free Fall) [s].
+    ///
+    /// Entspricht `TFF` (N44 R3). Berechnung via TFFCONMU noch nicht implementiert;
+    /// wird mit `0.0` initialisiert.
+    pub tff_s: f64,
 }
 
 /// Berechnet External-ΔV-Targeting-Parameter (P30).
@@ -207,6 +213,7 @@ pub fn p30_compute(input: &P30Input, alarm: &mut AlarmState) -> Option<P30Output
         delta_v_ref,
         h_apo,
         h_per,
+        tff_s: 0.0,
     })
 }
 
