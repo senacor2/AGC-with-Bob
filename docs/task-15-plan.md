@@ -90,7 +90,7 @@ statt als eigenständige numerische Eingabe behandelt.
 
 ## Sub-Task 15.3 — N93: Phase-Check-Bedingung korrigieren
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 In `noun_resolver.rs` zeigt N93 (Delta-Gyro-Winkel) Daten wenn `p51.phase == 0`
