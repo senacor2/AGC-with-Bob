@@ -344,7 +344,7 @@ wird in diesem Subtask das MM:SS-Display-Widget implementiert. Das betrifft
 
 ## Sub-Task 15.8 — N44: R3 (TFF) ergänzen
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 N44 definiert R3 als `TFF` (Time to Free Fall, MM:SS — Zeit bis zum
