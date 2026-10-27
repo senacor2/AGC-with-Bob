@@ -75,6 +75,13 @@ pub struct SimState {
     pub comp_acty: bool,
     /// Tick-Zähler (je 10 ms).
     pub tick: u64,
+    /// Roher Eingabepuffer für R1 (entspricht AGC XREG).
+    /// Wird bei V25-ENTER an `accept_load` übergeben, nicht der Anzeige-Wert.
+    pub load_r1: i32,
+    /// Roher Eingabepuffer für R2 (entspricht AGC YREG).
+    pub load_r2: i32,
+    /// Roher Eingabepuffer für R3 (entspricht AGC ZREG).
+    pub load_r3: i32,
 }
 
 impl SimState {
@@ -97,6 +104,9 @@ impl SimState {
             imu: SimImu::new(),
             comp_acty: false,
             tick: 0,
+            load_r1: 0,
+            load_r2: 0,
+            load_r3: 0,
         }
     }
 }
@@ -182,12 +192,15 @@ pub fn sim_tick(state: &mut SimState) {
                     // Enter im Idle-Modus: V25-Lade-Sequenz abschließen (accept_load)
                     // oder allgemeine Bestätigung.
                     if state.ctx.display.verb.val() == 25 {
-                        // R1/R2/R3 aus dem aktuell angezeigten DisplayRegister lesen —
-                        // vereinfacht: Displayregister-Dezimalwert direkt weitergeben.
-                        let r1 = display_reg_to_i32(state.ctx.display.r1);
-                        let r2 = display_reg_to_i32(state.ctx.display.r2);
-                        let r3 = display_reg_to_i32(state.ctx.display.r3);
-                        VerbDispatcher::accept_load(r1, r2, r3, &mut state.ctx);
+                        // Crew-Eingabe aus dediziertem Eingabepuffer lesen (XREG/YREG/ZREG).
+                        // Nicht aus Display-Registern: die enthalten den NounResolver-Wert,
+                        // nicht die Tastatureingabe.
+                        VerbDispatcher::accept_load(
+                            state.load_r1,
+                            state.load_r2,
+                            state.load_r3,
+                            &mut state.ctx,
+                        );
                     }
                 }
                 KeyEvent::Proceed => {
@@ -220,22 +233,6 @@ pub fn sim_tick(state: &mut SimState) {
     // COMP ACTY: leuchtet alle 40 Ticks kurz auf (ca. 400 ms Periode, 40 ms EIN)
     state.comp_acty = (state.tick % 40) < 4;
     state.tick += 1;
-}
-
-// ---------------------------------------------------------------------------
-// Hilfsfunktionen
-// ---------------------------------------------------------------------------
-
-/// Extrahiert den Dezimalwert aus einem [`agc_core::display::verb_noun::DisplayRegister`].
-///
-/// Gibt den `Decimal`-Wert zurück, oder 0 für `Blank`/`Octal`.
-#[inline]
-fn display_reg_to_i32(reg: agc_core::display::verb_noun::DisplayRegister) -> i32 {
-    use agc_core::display::verb_noun::DisplayRegister;
-    match reg {
-        DisplayRegister::Decimal(v) => v,
-        _ => 0,
-    }
 }
 
 // ---------------------------------------------------------------------------

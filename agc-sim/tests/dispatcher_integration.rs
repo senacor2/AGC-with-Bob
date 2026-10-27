@@ -440,3 +440,63 @@ fn v37_two_step_starts_program_and_stops_flash() {
         "Flash muss nach Programm-Start gestoppt sein"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test 15: V25 N61 ENTER — accept_load liest aus load_r1/r2/r3, nicht Display
+// ---------------------------------------------------------------------------
+
+/// Stellt sicher dass `accept_load` beim ENTER-Tastendruck die Werte aus
+/// `SimState::load_r1/r2/r3` verwendet, nicht aus den Display-Registern.
+///
+/// Aufbau:
+/// 1. V25 N61 ENTER — Lade-Verb aktiv, wartet auf Eingabe.
+/// 2. `state.load_r1 = 2525` (25.25°), `load_r2 = -800` (-8.00°), `load_r3 = 1`.
+/// 3. Display-Register werden auf einen abweichenden Wert gesetzt, um zu
+///    beweisen dass `accept_load` den Eingabepuffer, nicht das Display, liest.
+/// 4. ENTER drücken → `accept_load` mit load_r1/r2/r3-Werten aufgerufen.
+/// 5. `guidance.splashdown_lat/lon` und `heads_up` prüfen.
+#[test]
+fn v25n61_enter_uses_load_buffer_not_display() {
+    use agc_core::display::verb_noun::DisplayRegister;
+    use std::f64::consts::PI;
+
+    let mut state = SimState::new();
+
+    // V25 N61 ENTER — Lade-Sequenz starten
+    press_keys(&mut state, &[KEY_VERB, KEY_2, KEY_5, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+
+    // Eingabepuffer mit Crew-Werten füllen
+    state.load_r1 = 2525; // 25.25°
+    state.load_r2 = -800; // -8.00°
+    state.load_r3 = 1; // heads-up
+
+    // Display-Register absichtlich auf anderen Wert setzen —
+    // wenn accept_load fälschlicherweise hieraus liest, schlägt der Test fehl.
+    state.ctx.display.r1 = DisplayRegister::Decimal(9999);
+    state.ctx.display.r2 = DisplayRegister::Decimal(-9999);
+    state.ctx.display.r3 = DisplayRegister::Decimal(0);
+
+    // ENTER drücken — löst accept_load(load_r1, load_r2, load_r3) aus
+    press_keys(&mut state, &[KEY_ENTER]);
+
+    // Erwartete Werte in rad (1 centideg = π/18000 rad)
+    let centideg_to_rad = PI / 18_000.0_f64;
+    let expected_lat = 2525.0 * centideg_to_rad;
+    let expected_lon = -800.0 * centideg_to_rad;
+
+    assert!(
+        (state.ctx.guidance.splashdown_lat - expected_lat).abs() < 1e-12,
+        "splashdown_lat: erwartet {expected_lat:.10}, got {:.10}",
+        state.ctx.guidance.splashdown_lat
+    );
+    assert!(
+        (state.ctx.guidance.splashdown_lon - expected_lon).abs() < 1e-12,
+        "splashdown_lon: erwartet {expected_lon:.10}, got {:.10}",
+        state.ctx.guidance.splashdown_lon
+    );
+    assert!(
+        state.ctx.guidance.heads_up,
+        "heads_up muss true sein (load_r3 = 1)"
+    );
+}
