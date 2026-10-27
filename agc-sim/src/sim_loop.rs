@@ -26,7 +26,7 @@ use ratatui::{
 };
 
 use agc_core::alarm::AlarmState;
-use agc_core::context::AgcContext;
+use agc_core::context::{AgcContext, AlignmentCommand};
 use agc_core::display::dispatcher::VerbDispatcher;
 use agc_core::display::noun_resolver;
 use agc_core::display::verb_noun::{
@@ -176,11 +176,27 @@ pub fn sim_tick(state: &mut SimState) {
             // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, VERBFAN.
             match event {
                 KeyEvent::VerbSet(v) => {
-                    // Sofort dispatchen wenn Verb keinen Noun braucht (V32/V33/V34)
-                    // oder beim ersten ENTER nach V37 (RequestProgram → Flash einschalten).
-                    // V06/V16/V25/V41/V42 warten auf NounSet.
+                    // Sofort dispatchen wenn Verb keinen Noun braucht:
+                    // - V32/V33/V34: Recycle/Proceed/Terminate
+                    // - V37: RequestProgram (Flash einschalten)
+                    // - V41/V42: CoarseAlign/FineAlign (Prompt selbst schaltet Flash ein,
+                    //   kein Noun nötig für den ersten Schritt)
+                    // V06/V16/V25 warten weiterhin auf NounSet.
+                    //
+                    // AGC source: EXTENDED_VERBS.agc, VBCOARK/IMUFINEK — V41/V42 werden
+                    // ohne Noun-Anforderung ausgelöst.
                     let v_raw = v.val();
-                    if matches!(v_raw, 32..=34 | 37) {
+                    // Alignment-Prompt abbrechen: V34 (Terminate) während Flash+V25+N22/N93
+                    // aktiv → Flash stoppen, alignment_cmd NICHT setzen.
+                    // Muss vor dem allgemeinen Dispatch geprüft werden, da der Dispatcher
+                    // display.verb bereits auf 34 gesetzt hat.
+                    //
+                    // AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, TERMKEY.
+                    let was_alignment_prompt = state.ctx.display.flash_state
+                        && matches!(state.ctx.display.noun.val(), 22 | 93);
+                    if v_raw == 34 && was_alignment_prompt {
+                        agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
+                    } else if matches!(v_raw, 32..=34 | 37 | 41 | 42) {
                         let verb = state.ctx.display.verb;
                         let noun = state.ctx.display.noun;
                         VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
@@ -226,12 +242,37 @@ pub fn sim_tick(state: &mut SimState) {
                     }
                 }
                 KeyEvent::Enter => {
-                    // Enter im Idle-Modus: V25-Lade-Sequenz abschließen (accept_load)
-                    // oder allgemeine Bestätigung.
-                    if state.ctx.display.verb.val() == 25 {
-                        // Crew-Eingabe aus dediziertem Eingabepuffer lesen (XREG/YREG/ZREG).
-                        // Nicht aus Display-Registern: die enthalten den NounResolver-Wert,
-                        // nicht die Tastatureingabe.
+                    // Enter im Flash-Modus mit V25 N22/N93:
+                    // Alignment-Prompt bestätigen → alignment_cmd setzen, Flash stoppen.
+                    //
+                    // AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK / IMUFINEK.
+                    if state.ctx.display.flash_state && state.ctx.display.verb.val() == 25 {
+                        match state.ctx.display.noun.val() {
+                            22 => {
+                                state.ctx.guidance.alignment_cmd =
+                                    Some(AlignmentCommand::CoarseAlign);
+                                agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
+                            }
+                            93 => {
+                                state.ctx.guidance.alignment_cmd =
+                                    Some(AlignmentCommand::FineAlign);
+                                agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
+                            }
+                            _ => {
+                                // Enter im Idle-Modus: V25-Lade-Sequenz abschließen (accept_load).
+                                // Crew-Eingabe aus dediziertem Eingabepuffer lesen (XREG/YREG/ZREG).
+                                // Nicht aus Display-Registern: die enthalten den NounResolver-Wert,
+                                // nicht die Tastatureingabe.
+                                VerbDispatcher::accept_load(
+                                    state.load_r1,
+                                    state.load_r2,
+                                    state.load_r3,
+                                    &mut state.ctx,
+                                );
+                            }
+                        }
+                    } else if state.ctx.display.verb.val() == 25 {
+                        // V25 aktiv, aber kein Flash (normaler accept_load-Pfad)
                         VerbDispatcher::accept_load(
                             state.load_r1,
                             state.load_r2,
@@ -241,10 +282,43 @@ pub fn sim_tick(state: &mut SimState) {
                     }
                 }
                 KeyEvent::Proceed => {
-                    state.ctx.guidance.proceed_flag = true;
+                    // Proceed (PRO / V33) im Alignment-Prompt-Modus:
+                    // Flash+V25+N22 → CoarseAlign, Flash+V25+N93 → FineAlign.
+                    //
+                    // AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK / IMUFINEK.
+                    if state.ctx.display.flash_state && state.ctx.display.verb.val() == 25 {
+                        match state.ctx.display.noun.val() {
+                            22 => {
+                                state.ctx.guidance.alignment_cmd =
+                                    Some(AlignmentCommand::CoarseAlign);
+                                agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
+                            }
+                            93 => {
+                                state.ctx.guidance.alignment_cmd =
+                                    Some(AlignmentCommand::FineAlign);
+                                agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
+                            }
+                            _ => {
+                                state.ctx.guidance.proceed_flag = true;
+                            }
+                        }
+                    } else {
+                        state.ctx.guidance.proceed_flag = true;
+                    }
                 }
                 KeyEvent::Terminate => {
-                    state.ctx.guidance.terminate_flag = true;
+                    // Terminate (V34) im Alignment-Prompt-Modus:
+                    // Flash stoppen, alignment_cmd NICHT setzen (Crew bricht ab).
+                    //
+                    // AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, TERMKEY.
+                    if state.ctx.display.flash_state
+                        && state.ctx.display.verb.val() == 25
+                        && matches!(state.ctx.display.noun.val(), 22 | 93)
+                    {
+                        agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
+                    } else {
+                        state.ctx.guidance.terminate_flag = true;
+                    }
                 }
                 KeyEvent::Recycle => {
                     state.ctx.guidance.recycle_flag = true;

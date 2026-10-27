@@ -537,3 +537,200 @@ fn v25n61_sequential_noun_entries_fill_load_registers() {
     assert_eq!(state.load_r3, 33, "load_r3 muss 33 sein");
     assert_eq!(state.load_reg_idx, 2, "Index bleibt bei 2 (kein Überlauf)");
 }
+
+// ---------------------------------------------------------------------------
+// Test 16: V41 — Flash aktiv nach Enter, alignment_cmd noch None
+// ---------------------------------------------------------------------------
+
+/// `VERB 4 1 ENTER` → Flash aktiv, V25 N22 blinkend, alignment_cmd == None.
+///
+/// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK label.
+#[test]
+fn v41_first_enter_shows_flash_v25n22() {
+    use agc_core::display::verb_noun::KEY_PRO;
+
+    let mut state = SimState::new();
+
+    // V41 ENTER — erster Schritt: Flash einschalten mit V25/N22
+    press_keys(&mut state, &[KEY_VERB, KEY_4, KEY_1, KEY_ENTER]);
+
+    // Flash muss aktiv sein (Lade-Prompt für ICDU-Winkel)
+    assert!(
+        state.ctx.display.flash_state,
+        "flash_state nach V41 ENTER muss true sein (Lade-Prompt V25N22)"
+    );
+    assert_eq!(
+        state.ctx.display.verb.val(),
+        25,
+        "Verb nach V41 muss 25 sein (V25 Lade-Prompt)"
+    );
+    assert_eq!(
+        state.ctx.display.noun.val(),
+        22,
+        "Noun nach V41 muss 22 sein (N22 ICDU-Winkel)"
+    );
+
+    // alignment_cmd darf NOCH NICHT gesetzt sein (Crew hat noch nicht bestätigt)
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd, None,
+        "alignment_cmd nach V41 ENTER muss None sein (Crew noch nicht bestätigt)"
+    );
+
+    // --- Bestätigung mit PRO (V33 / Proceed) ---
+    press_keys(&mut state, &[KEY_PRO]);
+
+    // alignment_cmd muss jetzt gesetzt sein
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd,
+        Some(agc_core::context::AlignmentCommand::CoarseAlign),
+        "alignment_cmd nach V41→PRO muss CoarseAlign sein"
+    );
+    // Flash muss gestoppt sein
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach PRO-Bestätigung gestoppt sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 17: V41 — alignment_cmd per ENTER (statt PRO) gesetzt
+// ---------------------------------------------------------------------------
+
+/// `VERB 4 1 ENTER` → Flash aktiv; danach ENTER → alignment_cmd = CoarseAlign.
+///
+/// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK label.
+#[test]
+fn v41_enter_confirm_sets_coarse_align() {
+    let mut state = SimState::new();
+
+    // V41 ENTER — Flash einschalten
+    press_keys(&mut state, &[KEY_VERB, KEY_4, KEY_1, KEY_ENTER]);
+    assert!(state.ctx.display.flash_state, "Flash nach V41 erwartet");
+    assert_eq!(state.ctx.guidance.alignment_cmd, None);
+
+    // ENTER — Bestätigung (zweiter Weg neben PRO)
+    press_keys(&mut state, &[KEY_ENTER]);
+
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd,
+        Some(agc_core::context::AlignmentCommand::CoarseAlign),
+        "alignment_cmd nach V41→ENTER muss CoarseAlign sein"
+    );
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach ENTER gestoppt sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 18: V41 — Terminate bricht Prompt ab (kein alignment_cmd)
+// ---------------------------------------------------------------------------
+
+/// `VERB 4 1 ENTER` → Flash aktiv; danach V34 ENTER → Flash gestoppt, alignment_cmd None.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, TERMKEY.
+#[test]
+fn v41_terminate_cancels_prompt_no_alignment_cmd() {
+    use agc_core::display::verb_noun::KEY_PRO;
+    let _ = KEY_PRO; // suppress unused import warning
+
+    let mut state = SimState::new();
+
+    // V41 ENTER — Flash einschalten
+    press_keys(&mut state, &[KEY_VERB, KEY_4, KEY_1, KEY_ENTER]);
+    assert!(state.ctx.display.flash_state, "Flash nach V41 erwartet");
+
+    // V34 ENTER — Terminate: Prompt abbrechen
+    press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_4, KEY_ENTER]);
+
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd, None,
+        "alignment_cmd nach Terminate muss None bleiben"
+    );
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach Terminate gestoppt sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 19: V42 — Flash aktiv nach Enter, alignment_cmd noch None
+// ---------------------------------------------------------------------------
+
+/// `VERB 4 2 ENTER` → Flash aktiv, V25 N93 blinkend, alignment_cmd == None.
+///
+/// AGC source: `Comanche055/EXTENDED_VERBS.agc`, IMUFINEK label.
+#[test]
+fn v42_first_enter_shows_flash_v25n93() {
+    use agc_core::display::verb_noun::KEY_PRO;
+
+    let mut state = SimState::new();
+
+    // V42 ENTER — erster Schritt: Flash einschalten mit V25/N93
+    press_keys(&mut state, &[KEY_VERB, KEY_4, KEY_2, KEY_ENTER]);
+
+    // Flash muss aktiv sein
+    assert!(
+        state.ctx.display.flash_state,
+        "flash_state nach V42 ENTER muss true sein (Lade-Prompt V25N93)"
+    );
+    assert_eq!(
+        state.ctx.display.verb.val(),
+        25,
+        "Verb nach V42 muss 25 sein"
+    );
+    assert_eq!(
+        state.ctx.display.noun.val(),
+        93,
+        "Noun nach V42 muss 93 sein (N93 Delta-Gyro)"
+    );
+
+    // alignment_cmd darf NOCH NICHT gesetzt sein
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd, None,
+        "alignment_cmd nach V42 ENTER muss None sein"
+    );
+
+    // --- Bestätigung mit PRO ---
+    press_keys(&mut state, &[KEY_PRO]);
+
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd,
+        Some(agc_core::context::AlignmentCommand::FineAlign),
+        "alignment_cmd nach V42→PRO muss FineAlign sein"
+    );
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach PRO-Bestätigung gestoppt sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 20: V42 — alignment_cmd per ENTER gesetzt
+// ---------------------------------------------------------------------------
+
+/// `VERB 4 2 ENTER` → Flash aktiv; danach ENTER → alignment_cmd = FineAlign.
+///
+/// AGC source: `Comanche055/EXTENDED_VERBS.agc`, IMUFINEK label.
+#[test]
+fn v42_enter_confirm_sets_fine_align() {
+    let mut state = SimState::new();
+
+    // V42 ENTER — Flash einschalten
+    press_keys(&mut state, &[KEY_VERB, KEY_4, KEY_2, KEY_ENTER]);
+    assert!(state.ctx.display.flash_state, "Flash nach V42 erwartet");
+    assert_eq!(state.ctx.guidance.alignment_cmd, None);
+
+    // ENTER — Bestätigung
+    press_keys(&mut state, &[KEY_ENTER]);
+
+    assert_eq!(
+        state.ctx.guidance.alignment_cmd,
+        Some(agc_core::context::AlignmentCommand::FineAlign),
+        "alignment_cmd nach V42→ENTER muss FineAlign sein"
+    );
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach ENTER gestoppt sein"
+    );
+}

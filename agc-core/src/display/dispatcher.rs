@@ -18,7 +18,7 @@
 //! AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, VERBFAN/VERBTAB.
 //! AGC source: `Comanche055/EXTENDED_VERBS.agc`, LST2FAN / VBCOARK / IMUFINEK.
 
-use crate::context::{AgcContext, AlignmentCommand};
+use crate::context::AgcContext;
 use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, NounCode, VerbCode};
 
@@ -418,29 +418,40 @@ impl VerbDispatcher {
                 ctx.guidance.recycle_flag = true;
             }
 
-            // V41: Coarse Align IMU
-            // AGC source: EXTENDED_VERBS.agc, VBCOARK / IMUCOARK label.
+            // V41: Coarse Align IMU — Lade-Prompt V25 N22 anzeigen.
+            //
+            // Laut AGC zeigt V41 zuerst blinkend V25 N22 (neue ICDU-Winkel eingeben),
+            // bevor der eigentliche Coarse-Align-Befehl gesetzt wird.
+            // `alignment_cmd` wird erst gesetzt, wenn die Crew mit V33 (PRO) oder
+            // ENTER bestätigt.
+            //
+            // AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK / IMUCOARK label.
             VerbAction::CoarseAlign => {
-                ctx.guidance.alignment_cmd = Some(AlignmentCommand::CoarseAlign);
-                // V41 benötigt N20 (ICDU Angles): einmalige Anzeige der Ziel-Winkel
-                // Blinken stoppen — kein Eingabe-Prompt bei Coarse Align
-                ctx.display.flash_state = false;
-                ctx.display.flash_counter = 0;
-                ctx.display.lights.verb_noun_flash = false;
-                let [r1, r2, r3] = noun_resolver::resolve(noun, ctx);
-                ctx.display.r1 = r1;
-                ctx.display.r2 = r2;
-                ctx.display.r3 = r3;
+                // Flash einschalten: blinkend V25 N22 anzeigen (ICDU-Winkel Eingabe).
+                // VerbCode(25) und NounCode(22) sind garantiert gültig (≤ 99).
+                start_flash(&mut ctx.display);
+                if let (Some(v), Some(n)) = (VerbCode::new(25), NounCode::new(22)) {
+                    ctx.display.verb = v;
+                    ctx.display.noun = n;
+                }
             }
 
-            // V42: Fine Align IMU
-            // AGC source: EXTENDED_VERBS.agc, IMUFINEK / IMUFINE label.
+            // V42: Fine Align IMU — Lade-Prompt V25 N93 anzeigen.
+            //
+            // Laut AGC zeigt V42 zuerst blinkend V25 N93 (Delta-Gyro-Winkel eingeben),
+            // bevor der eigentliche Fine-Align-Befehl gesetzt wird.
+            // `alignment_cmd` wird erst gesetzt, wenn die Crew mit V33 (PRO) oder
+            // ENTER bestätigt.
+            //
+            // AGC source: `Comanche055/EXTENDED_VERBS.agc`, IMUFINEK / IMUFINE label.
             VerbAction::FineAlign => {
-                ctx.guidance.alignment_cmd = Some(AlignmentCommand::FineAlign);
-                // Fine Align: kein Noun-Display nötig, Flash stoppen
-                ctx.display.flash_state = false;
-                ctx.display.flash_counter = 0;
-                ctx.display.lights.verb_noun_flash = false;
+                // Flash einschalten: blinkend V25 N93 anzeigen (Delta-Gyro-Winkel Eingabe).
+                // VerbCode(25) und NounCode(93) sind garantiert gültig (≤ 99).
+                start_flash(&mut ctx.display);
+                if let (Some(v), Some(n)) = (VerbCode::new(25), NounCode::new(93)) {
+                    ctx.display.verb = v;
+                    ctx.display.noun = n;
+                }
             }
 
             // V37 erster Schritt: Flash einschalten, auf Programm-Nummer warten.
@@ -862,114 +873,111 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 13 (Sub-Task 5): V41/N20 → alignment_cmd = CoarseAlign, Flash aus
+    // Test 13 (Sub-Task 5 / 15.6): V41 → Flash ein, V25/N22, alignment_cmd None
     //
-    // Sequenz: VERB 41 ENTER NOUN 20 → Coarse Align Befehl gesetzt.
+    // Neues Verhalten (Task 15.6): V41 zeigt zuerst blinkend V25 N22 als
+    // Lade-Prompt. Der `alignment_cmd` wird erst nach Crew-Bestätigung gesetzt.
     // AGC source: EXTENDED_VERBS.agc, VBCOARK / IMUCOARK.
     // -----------------------------------------------------------------------
     #[test]
     fn v41n20_sets_coarse_align_cmd() {
-        use crate::context::AlignmentCommand;
-
         let mut ctx = AgcContext::default();
 
-        // Verb/Noun setzen
         VerbDispatcher::dispatch(verb(41), noun(20), &mut ctx);
 
-        // alignment_cmd = CoarseAlign
+        // Flash muss aktiv sein (Lade-Prompt für ICDU-Winkel).
+        // `lights.verb_noun_flash` wird erst durch t4rupt_tick gesetzt (nach
+        // FLASH_HALF_PERIOD_TICKS); hier prüfen wir nur flash_state.
+        assert!(
+            ctx.display.flash_state,
+            "flash_state muss true sein nach V41 (Lade-Prompt V25N22)"
+        );
+
+        // Verb/Noun auf V25/N22 gesetzt (Lade-Prompt)
+        assert_eq!(ctx.display.verb, verb(25), "Verb im Display muss 25 sein");
+        assert_eq!(ctx.display.noun, noun(22), "Noun im Display muss 22 sein");
+
+        // alignment_cmd noch NICHT gesetzt (Crew hat noch nicht bestätigt)
         assert_eq!(
-            ctx.guidance.alignment_cmd,
-            Some(AlignmentCommand::CoarseAlign),
-            "alignment_cmd muss CoarseAlign sein nach V41"
+            ctx.guidance.alignment_cmd, None,
+            "alignment_cmd muss None sein nach V41 (Prompt aktiv)"
         );
-
-        // Flash aus (Coarse Align braucht keinen Eingabe-Prompt)
-        assert!(
-            !ctx.display.flash_state,
-            "flash_state muss false sein nach V41"
-        );
-        assert!(
-            !ctx.display.lights.verb_noun_flash,
-            "VERB/NOUN FLASH aus nach V41"
-        );
-
-        // Verb/Noun im Display gesetzt
-        assert_eq!(ctx.display.verb, verb(41), "Verb im Display muss 41 sein");
-        assert_eq!(ctx.display.noun, noun(20), "Noun im Display muss 20 sein");
     }
 
     // -----------------------------------------------------------------------
-    // Test 14 (Sub-Task 5): V42 → alignment_cmd = FineAlign, Flash aus
+    // Test 14 (Sub-Task 5 / 15.6): V42 → Flash ein, V25/N93, alignment_cmd None
     //
-    // Sequenz: VERB 42 ENTER → Fine Align Befehl gesetzt.
+    // Neues Verhalten (Task 15.6): V42 zeigt zuerst blinkend V25 N93 als
+    // Lade-Prompt. Der `alignment_cmd` wird erst nach Crew-Bestätigung gesetzt.
     // AGC source: EXTENDED_VERBS.agc, IMUFINEK / IMUFINE.
     // -----------------------------------------------------------------------
     #[test]
     fn v42_sets_fine_align_cmd() {
-        use crate::context::AlignmentCommand;
-
         let mut ctx = AgcContext::default();
 
         VerbDispatcher::dispatch(verb(42), noun(0), &mut ctx);
 
-        // alignment_cmd = FineAlign
-        assert_eq!(
-            ctx.guidance.alignment_cmd,
-            Some(AlignmentCommand::FineAlign),
-            "alignment_cmd muss FineAlign sein nach V42"
+        // Flash muss aktiv sein (Lade-Prompt für Delta-Gyro-Winkel).
+        // `lights.verb_noun_flash` wird erst durch t4rupt_tick gesetzt (nach
+        // FLASH_HALF_PERIOD_TICKS); hier prüfen wir nur flash_state.
+        assert!(
+            ctx.display.flash_state,
+            "flash_state muss true sein nach V42 (Lade-Prompt V25N93)"
         );
 
-        // Flash aus
-        assert!(
-            !ctx.display.flash_state,
-            "flash_state muss false sein nach V42"
-        );
-        assert!(
-            !ctx.display.lights.verb_noun_flash,
-            "VERB/NOUN FLASH aus nach V42"
+        // Verb/Noun auf V25/N93 gesetzt (Lade-Prompt)
+        assert_eq!(ctx.display.verb, verb(25), "Verb im Display muss 25 sein");
+        assert_eq!(ctx.display.noun, noun(93), "Noun im Display muss 93 sein");
+
+        // alignment_cmd noch NICHT gesetzt
+        assert_eq!(
+            ctx.guidance.alignment_cmd, None,
+            "alignment_cmd muss None sein nach V42 (Prompt aktiv)"
         );
     }
 
     // -----------------------------------------------------------------------
-    // Test 15 (Sub-Task 5): V41 überschreibt vorherigen alignment_cmd
+    // Test 15 (Sub-Task 5 / 15.6): V41 nach V42 — beide zeigen Prompt (Flash)
     //
-    // Sicherheitstest: nach FineAlign kann CoarseAlign gesetzt werden.
+    // Sicherheitstest: nach einem V42-Prompt kann V41-Prompt aktiv sein.
+    // alignment_cmd bleibt None bis zur Crew-Bestätigung.
     // -----------------------------------------------------------------------
     #[test]
     fn v41_overwrites_previous_alignment_cmd() {
-        use crate::context::AlignmentCommand;
-
         let mut ctx = AgcContext::default();
 
-        // Zuerst V42 (FineAlign)
+        // Zuerst V42 → Prompt V25/N93
         VerbDispatcher::dispatch(verb(42), noun(0), &mut ctx);
-        assert_eq!(
-            ctx.guidance.alignment_cmd,
-            Some(AlignmentCommand::FineAlign)
-        );
+        assert!(ctx.display.flash_state, "Flash nach V42 erwartet");
+        assert_eq!(ctx.display.noun, noun(93), "Noun nach V42 muss 93 sein");
+        assert_eq!(ctx.guidance.alignment_cmd, None);
 
-        // Dann V41 (CoarseAlign) — muss FineAlign überschreiben
+        // Dann V41 → überschreibt Prompt auf V25/N22
         VerbDispatcher::dispatch(verb(41), noun(20), &mut ctx);
+        assert!(ctx.display.flash_state, "Flash nach V41 erwartet");
         assert_eq!(
-            ctx.guidance.alignment_cmd,
-            Some(AlignmentCommand::CoarseAlign),
-            "CoarseAlign muss FineAlign überschreiben"
+            ctx.display.noun,
+            noun(22),
+            "Noun nach V41 muss 22 sein (überschreibt N93)"
+        );
+        assert_eq!(
+            ctx.guidance.alignment_cmd, None,
+            "alignment_cmd bleibt None bis Crew bestätigt"
         );
     }
 
     // -----------------------------------------------------------------------
-    // Test 16 (Sub-Task 5): V41N20 mit gesetztem thetad → R-Register befüllt
+    // Test 16 (Sub-Task 5 / 15.6): V41 → Flash aktiv, R-Register nicht direkt gesetzt
     //
-    // Wenn thetad gesetzt ist, zeigt V41/N20 die CDU-Winkel an.
-    // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N20.
+    // Neues Verhalten: V41 setzt keinen NounResolver-Aufruf mehr beim Dispatch.
+    // R-Register bleiben unverändert (Blank). Die Anzeige erfolgt erst nach
+    // Crew-Bestätigung über den NounResolver im Monitor/Load-Mechanismus.
     // -----------------------------------------------------------------------
     #[test]
     fn v41n20_displays_thetad_if_set() {
-        use crate::display::verb_noun::DisplayRegister;
-
         let mut ctx = AgcContext::default();
 
-        // Ziel-Gimbal-Winkel setzen (OGA=30°, MGA=−45°, IGA=10°)
+        // Ziel-Gimbal-Winkel setzen (wird erst nach Bestätigung angezeigt)
         let oga_rad = 30.0_f64.to_radians();
         let mga_rad = (-45.0_f64).to_radians();
         let iga_rad = 10.0_f64.to_radians();
@@ -977,24 +985,19 @@ mod tests {
 
         VerbDispatcher::dispatch(verb(41), noun(20), &mut ctx);
 
-        // R1 = OGA ≈ 3000 (0.01°)
-        if let DisplayRegister::Decimal(r1) = ctx.display.r1 {
-            assert!(
-                r1 > 2900 && r1 < 3100,
-                "R1 (OGA) erwartet ~3000 (0.01°), got {r1}"
-            );
-        } else {
-            panic!("R1 muss Decimal sein, got {:?}", ctx.display.r1);
-        }
+        // Flash aktiv und Prompt V25/N22 angezeigt
+        assert!(
+            ctx.display.flash_state,
+            "Flash muss nach V41 aktiv sein (Lade-Prompt)"
+        );
+        assert_eq!(ctx.display.verb, verb(25), "Verb muss V25 sein");
+        assert_eq!(ctx.display.noun, noun(22), "Noun muss N22 sein");
 
-        // R2 = MGA ≈ −4500 (0.01°)
-        if let DisplayRegister::Decimal(r2) = ctx.display.r2 {
-            assert!(
-                r2 > -4600 && r2 < -4400,
-                "R2 (MGA) erwartet ~−4500 (0.01°), got {r2}"
-            );
-        } else {
-            panic!("R2 muss Decimal sein, got {:?}", ctx.display.r2);
-        }
+        // R-Register bleiben unverändert (kein NounResolver-Aufruf beim Dispatch)
+        // Die Anzeige erfolgt erst nach Crew-Bestätigung.
+        assert_eq!(
+            ctx.guidance.alignment_cmd, None,
+            "alignment_cmd muss None sein (Prompt noch aktiv)"
+        );
     }
 }
