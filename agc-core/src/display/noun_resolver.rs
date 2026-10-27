@@ -489,17 +489,17 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
         93 => {
             // THETAD-Differenz als Gyro-Torquing-Approximation.
             // Wenn kein P51-State → Blank.
-            let Some(ref p51) = ctx.guidance.p51 else {
+            let Some(_p51) = ctx.guidance.p51.as_ref() else {
                 return [DisplayRegister::Blank; 3];
             };
             // Gyro-Korrekturen können aus v1_body/v2_body-Vektoren nicht direkt
             // abgeleitet werden ohne vollständige Gyro-Torquing-Berechnung (R55).
             // Wir zeigen THETAD-Winkel in 0.001° als Proxy für die Delta-Winkel,
-            // sobald P51 Phase ≥ 4 erreicht hat (TRIAD fertig).
-            if p51.phase != 0 {
+            // sobald thetad gesetzt wurde (nicht mehr Null-Defaultwert).
+            let [t0, t1, t2] = ctx.guidance.thetad;
+            if t0 == 0.0 && t1 == 0.0 && t2 == 0.0 {
                 return [DisplayRegister::Blank; 3]; // Noch nicht berechnet
             }
-            let [t0, t1, t2] = ctx.guidance.thetad;
             [
                 DisplayRegister::Decimal(deg_to_millideg(t0 * (180.0 / core::f64::consts::PI))),
                 DisplayRegister::Decimal(deg_to_millideg(t1 * (180.0 / core::f64::consts::PI))),
@@ -1130,18 +1130,51 @@ mod tests {
         assert_eq!(r3, DisplayRegister::Blank);
     }
 
-    /// N93 mit P51 in Phase ≠ 0 (noch nicht fertig) → Blank.
+    /// N93 mit P51-State aber thetad == [0,0,0] → Blank.
     ///
-    /// AGC source: P51-P53.agc, P51 Phasenmodell (Phase 0 = fertig).
+    /// thetad=0 ist der Defaultwert vor jeder P51-Berechnung; Daten sind erst
+    /// sinnvoll wenn thetad gesetzt wurde.
+    ///
+    /// AGC source: P51-P53.agc, R55.1 (V06N93).
     #[test]
-    fn n93_with_p51_in_progress_returns_blank() {
+    fn n93_with_zero_thetad_returns_blank() {
         use crate::guidance::p51_53::P51State;
 
         let mut ctx = AgcContext::default();
-        ctx.guidance.p51 = Some(P51State::new(1, 2)); // Phase 2 = erste Messung ausstehend
+        // P51-State vorhanden, aber thetad noch auf Default-Nullwert
+        ctx.guidance.p51 = Some(P51State::new(1, 2));
+        // ctx.guidance.thetad bleibt [0.0, 0.0, 0.0] (Default)
 
-        let [r1, _, _] = resolve(noun(93), &ctx);
-        assert_eq!(r1, DisplayRegister::Blank, "N93 mit P51 Phase≠0 → Blank");
+        let [r1, r2, r3] = resolve(noun(93), &ctx);
+        assert_eq!(r1, DisplayRegister::Blank, "N93 mit thetad=0 → Blank");
+        assert_eq!(r2, DisplayRegister::Blank);
+        assert_eq!(r3, DisplayRegister::Blank);
+    }
+
+    /// N93 mit thetad ≠ 0 → Delta-Gyro-Winkel in 0.001° sichtbar.
+    ///
+    /// Sobald P51 thetad gesetzt hat, zeigt N93 die Winkel an.
+    ///
+    /// AGC source: P51-P53.agc, R55.1 (V06N93 display of gyro corrections).
+    #[test]
+    fn n93_with_nonzero_thetad_returns_values() {
+        use crate::guidance::p51_53::P51State;
+
+        let mut ctx = AgcContext::default();
+        ctx.guidance.p51 = Some(P51State::new(1, 0));
+        // 1° in Radiant für alle drei Achsen
+        let one_deg_rad = core::f64::consts::PI / 180.0;
+        ctx.guidance.thetad = [one_deg_rad, one_deg_rad, one_deg_rad];
+
+        let [r1, r2, r3] = resolve(noun(93), &ctx);
+        // 1° × (180/π) × 1° = 1° → 1000 tausendstel Grad
+        assert_eq!(
+            r1,
+            DisplayRegister::Decimal(1000),
+            "N93 thetad=1° → 1000 (0.001°)"
+        );
+        assert_eq!(r2, DisplayRegister::Decimal(1000));
+        assert_eq!(r3, DisplayRegister::Decimal(1000));
     }
 
     // -----------------------------------------------------------------------
