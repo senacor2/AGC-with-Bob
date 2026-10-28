@@ -35,6 +35,7 @@ use agc_core::display::verb_noun::{
     KEY_KEY_REL, KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
 };
 use agc_core::hal::DskyHal;
+use agc_physics::bodies::Body;
 use agc_physics::math::Vec3;
 use agc_physics::trajectory::{propagate, State, StepParams};
 
@@ -85,6 +86,17 @@ pub struct SimState {
     /// Index des nächsten zu befüllenden Lade-Registers (0=R1, 1=R2, 2=R3).
     /// Wird bei V25-Dateneingabe nach jeder Noun-Bestätigung inkrementiert.
     pub load_reg_idx: u8,
+    /// Aktiver Zentralkörper für den RK4-Integrator.
+    ///
+    /// Wird beim Laden eines Szenarios automatisch aus der Bahnhöhe abgeleitet:
+    /// `|r| < 3 000 000 m` → `Body::Moon`, sonst → `Body::Earth`.
+    pub step_body: Body,
+    /// Eingabemodus für Szenario-Dateiname (`@`-Taste).
+    ///
+    /// `Some(String)` = TUI zeigt Eingabefeld; `None` = normaler Modus.
+    pub scenario_input: Option<String>,
+    /// Einzeilige Statusmeldung im TUI-Footer (Fehler, Bestätigungen).
+    pub status_msg: Option<String>,
 }
 
 impl SimState {
@@ -111,6 +123,50 @@ impl SimState {
             load_r2: 0,
             load_r3: 0,
             load_reg_idx: 0,
+            step_body: Body::Earth,
+            scenario_input: None,
+            status_msg: None,
+        }
+    }
+
+    /// Lädt ein Szenario in den SimState.
+    ///
+    /// Überschreibt `traj` mit dem Szenario-Bahnzustand und setzt `ctx` auf
+    /// Default zurück. Der Zentralkörper (`step_body`) wird automatisch aus
+    /// der Bahnhöhe abgeleitet:
+    /// - `|r| < 3 000 000 m` → `Body::Moon` (Mondorbit)
+    /// - sonst               → `Body::Earth`
+    ///
+    /// Optionale `thetad_deg`-Felder im Szenario werden nach Rad konvertiert
+    /// und in `ctx.guidance.thetad` gespeichert.
+    pub fn load_scenario(&mut self, data: &crate::scenarios::ScenarioData) {
+        self.traj = data.to_state();
+        self.ctx = AgcContext::default();
+        self.input_buf = InputBuffer::new();
+        self.alarms = AlarmState::new();
+        self.load_r1 = 0;
+        self.load_r2 = 0;
+        self.load_r3 = 0;
+        self.load_reg_idx = 0;
+
+        // Zentralkörper aus Bahnradius ableiten.
+        // Schwelle 3 000 000 m: Mondorbit max. ~2 500 km Radius, Erdorbit min. ~6 371 km.
+        // Kein Überlappungsrisiko zwischen Mond- und Erdorbits.
+        const MOON_THRESHOLD_M: f64 = 3_000_000.0;
+        self.step_body = if data.position.magnitude() < MOON_THRESHOLD_M {
+            Body::Moon
+        } else {
+            Body::Earth
+        };
+
+        // Optionale Gimbal-Zielwinkel aus Szenario übernehmen (Grad → Rad).
+        if let Some(td_deg) = data.thetad_deg {
+            const DEG_TO_RAD: f64 = core::f64::consts::PI / 180.0;
+            self.ctx.guidance.thetad = [
+                td_deg[0] * DEG_TO_RAD,
+                td_deg[1] * DEG_TO_RAD,
+                td_deg[2] * DEG_TO_RAD,
+            ];
         }
     }
 }
@@ -356,7 +412,13 @@ pub fn sim_tick(state: &mut SimState) {
     }
 
     // --- Physik: RK4 ---
-    let params = StepParams::earth_ballistic();
+    // Zentralkörper aus state.step_body (wird beim Laden eines Szenarios gesetzt).
+    let params = StepParams {
+        body: state.step_body,
+        thrust_accel: Vec3::ZERO,
+        alpha_rad: 0.0,
+        body_radius_m: state.step_body.radius(),
+    };
     state.traj = propagate(state.traj, dt, 1, &params);
 
     // --- IMU: spezifische Kraft ≈ 0 im freien Fall (Keplerbahn) ---
@@ -376,14 +438,29 @@ pub fn render<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     state: &SimState,
 ) -> std::io::Result<()> {
+    use ratatui::{
+        style::{Color, Style},
+        text::Line,
+        widgets::{Block, Borders, Clear, Paragraph},
+    };
+
     terminal.draw(|frame| {
         let area = frame.area();
+
+        // Haupt-Layout: oben Hauptinhalt, unten 1 Zeile Footer
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(area);
+
+        let main_area = main_chunks[0];
+        let footer_area = main_chunks[1];
 
         // Haupt-Layout: DSKY links (62 breit), Info rechts
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(62), Constraint::Min(32)])
-            .split(area);
+            .split(main_area);
 
         // DSKY-Panel
         frame.render_widget(
@@ -399,6 +476,42 @@ pub fn render<B: ratatui::backend::Backend>(
 
         frame.render_widget(StateDisplayWidget::new(Some(&state.traj)), right_chunks[0]);
         frame.render_widget(AlarmDisplayWidget::new(&state.alarms), right_chunks[1]);
+
+        // Footer: Hilfszeile oder Statusmeldung
+        let footer_text = if let Some(msg) = &state.status_msg {
+            Line::styled(format!(" {msg}"), Style::default().fg(Color::Yellow))
+        } else {
+            Line::styled(
+                "  q Beenden  @ Szenario laden  V/N/E/P/R/C/K AGC-Tasten",
+                Style::default().fg(Color::DarkGray),
+            )
+        };
+        frame.render_widget(Paragraph::new(footer_text), footer_area);
+
+        // Szenario-Eingabefeld (overlay, wenn @-Modus aktiv)
+        if let Some(ref input) = state.scenario_input {
+            // Eingabefeld zentriert über dem DSKY-Panel
+            let popup_w = 58u16.min(area.width.saturating_sub(2));
+            let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+            let popup_y = area.y + area.height / 2;
+            let popup_area = ratatui::layout::Rect {
+                x: popup_x,
+                y: popup_y,
+                width: popup_w,
+                height: 3,
+            };
+            frame.render_widget(Clear, popup_area);
+            let block = Block::default()
+                .title(" Szenario laden (ENTER bestätigen, ESC abbrechen) ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan));
+            let inner = block.inner(popup_area);
+            frame.render_widget(block, popup_area);
+            frame.render_widget(
+                Paragraph::new(input.as_str()).style(Style::default().fg(Color::White)),
+                inner,
+            );
+        }
     })?;
     Ok(())
 }
@@ -446,7 +559,11 @@ pub fn map_key(key: CrossKey, mods: KeyModifiers) -> Option<u8> {
 ///
 /// Initialisiert crossterm/ratatui, läuft den Sim-Loop bis der Nutzer
 /// `q` oder `Ctrl+C` drückt, und stellt das Terminal danach wieder her.
-pub fn run_tui() -> std::io::Result<()> {
+///
+/// # Parameter
+/// - `scenario_path`: optionaler Pfad zu einer `.scenario`-Datei, die vor dem
+///   ersten Tick geladen wird (entspricht `--scenario <path>` CLI-Flag).
+pub fn run_tui(scenario_path: Option<&str>) -> std::io::Result<()> {
     use crossterm::{
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -459,7 +576,7 @@ pub fn run_tui() -> std::io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = event_loop(&mut terminal);
+    let result = event_loop(&mut terminal, scenario_path);
 
     // Terminal immer wiederherstellen, auch bei Fehler
     let _ = disable_raw_mode();
@@ -469,8 +586,25 @@ pub fn run_tui() -> std::io::Result<()> {
     result
 }
 
-fn event_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> std::io::Result<()> {
+fn event_loop<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    scenario_path: Option<&str>,
+) -> std::io::Result<()> {
     let mut state = SimState::new();
+
+    // CLI-Flag: Szenario vorladen
+    if let Some(path) = scenario_path {
+        match crate::scenarios::load_scenario_file(path) {
+            Ok(data) => {
+                state.load_scenario(&data);
+                state.status_msg = Some(format!("Szenario geladen: {path}"));
+            }
+            Err(e) => {
+                state.status_msg = Some(format!("Fehler: {e}"));
+            }
+        }
+    }
+
     let mut last_tick = Instant::now();
 
     loop {
@@ -483,12 +617,58 @@ fn event_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> std::
 
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
+                // Eingabemodus für Szenario-Dateiname (@-Taste)
+                if let Some(ref mut input) = state.scenario_input.clone() {
+                    match key.code {
+                        CrossKey::Esc => {
+                            state.scenario_input = None;
+                        }
+                        CrossKey::Enter => {
+                            let path = input.trim().to_string();
+                            state.scenario_input = None;
+                            match crate::scenarios::load_scenario_file(&path) {
+                                Ok(data) => {
+                                    state.load_scenario(&data);
+                                    state.status_msg = Some(format!("Szenario geladen: {path}"));
+                                }
+                                Err(e) => {
+                                    state.status_msg = Some(format!("Fehler: {e}"));
+                                }
+                            }
+                        }
+                        CrossKey::Backspace => {
+                            if let Some(ref mut s) = state.scenario_input {
+                                s.pop();
+                            }
+                        }
+                        CrossKey::Char(c) => {
+                            if let Some(ref mut s) = state.scenario_input {
+                                s.push(c);
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue; // Keine AGC-Tastenverarbeitung im Eingabemodus
+                }
+
                 // Beenden mit q oder Ctrl+C
                 if key.code == CrossKey::Char('q')
                     || (key.code == CrossKey::Char('c')
                         && key.modifiers.contains(KeyModifiers::CONTROL))
                 {
                     return Ok(());
+                }
+
+                // @-Taste: Szenario-Eingabemodus öffnen
+                if key.code == CrossKey::Char('@') {
+                    state.scenario_input = Some(String::new());
+                    state.status_msg = None;
+                    continue;
+                }
+
+                // Statusmeldung bei nächster Taste löschen
+                if state.status_msg.is_some() {
+                    state.status_msg = None;
                 }
 
                 // Tastendruck an SimDsky weiterleiten

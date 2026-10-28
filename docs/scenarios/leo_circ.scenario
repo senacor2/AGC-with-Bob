@@ -1,0 +1,15 @@
+# AGC Scenario File — LEO Circular Orbit 400 km
+# Quelle: agc-sim/src/sim_loop.rs (bestehender Startzustand)
+# Physik-Konstanten: agc-physics/src/bodies.rs (MU_EARTH, R_EARTH)
+#
+# r      = 6_371_000 + 400_000 = 6_771_000 m
+# v_circ = sqrt(3.986004418e14 / 6_771_000) ≈ 7668.3 m/s
+# Bahn: Kreisbahn in der x-y-Ebene, Startposition auf +x-Achse
+
+pos_x_m  = 6771000.0
+pos_y_m  = 0.0
+pos_z_m  = 0.0
+vel_x_ms = 0.0
+vel_y_ms = 7668.3
+vel_z_ms = 0.0
+time_s   = 0.0

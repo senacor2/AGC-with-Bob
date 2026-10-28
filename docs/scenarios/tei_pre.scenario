@@ -1,0 +1,17 @@
+# AGC Scenario File — Lunar Orbit 110 km (pre-TEI burn)
+# Quelle: Physik-Konstanten aus agc-physics/src/bodies.rs
+#   MU_MOON = 4.904_869_5e12 m³/s²
+#   R_MOON  = 1_737_400 m
+# Apollo-11-typische Mondorbit-Höhe von ~110 km (vgl. Vallado §5.4)
+#
+# r      = 1_737_400 + 110_000 = 1_847_400 m
+# v_circ = sqrt(4.904869e12 / 1_847_400) ≈ 1630.3 m/s
+# Bahn: Kreisbahn in der x-y-Ebene, Startposition auf +x-Achse
+
+pos_x_m  = 1847400.0
+pos_y_m  = 0.0
+pos_z_m  = 0.0
+vel_x_ms = 0.0
+vel_y_ms = 1630.3
+vel_z_ms = 0.0
+time_s   = 0.0

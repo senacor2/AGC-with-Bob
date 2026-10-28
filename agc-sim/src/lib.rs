@@ -10,5 +10,6 @@
 //! - End-to-End Integrationstests: folgen in Task 13
 
 pub mod hal;
+pub mod scenarios;
 pub mod sim_loop;
 pub mod tui;

@@ -20,7 +20,7 @@
 
 use crate::context::AgcContext;
 use crate::display::noun_resolver;
-use crate::display::verb_noun::{start_flash, NounCode, VerbCode};
+use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
 
 // ---------------------------------------------------------------------------
 // VerbAction
@@ -470,40 +470,69 @@ impl VerbDispatcher {
     /// aktiven V25 der ENTER-Tastendruck erfolgt. Interpretiert R1/R2/R3
     /// anhand des aktiven Nouns:
     ///
+    /// - **N22**: THETAD (Gimbal-Zielwinkel CoarseAlign) [0.01°] → `guidance.thetad` [rad]
+    ///   AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, N22 (THETAD).
     /// - **N61**: LAT(SPL) [0.01°] → `guidance.splashdown_lat` [rad],
     ///   LNG(SPL) [0.01°] → `guidance.splashdown_lon` [rad],
     ///   HEADSUP  [±1]    → `guidance.heads_up` (1 = heads-up, −1 = heads-down)
-    ///
-    /// Für andere Nouns wird keine Aktion ausgeführt (unvollständig — Sub-Task 5+).
+    /// - **N93**: DELTA GYRO ANGLES (FineAlign-Korrekturen) [0.001°] → `guidance.thetad` [rad]
+    ///   AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, N93 (DELTA GYRO ANGLES).
     ///
     /// Stoppt VERB/NOUN-Blinken nach erfolgreicher Übernahme.
     ///
     /// # Parameter
-    /// - `r1_centideg`: R1-Eingabe in 0.01° (z. B. 2525 für 25.25°)
-    /// - `r2_centideg`: R2-Eingabe in 0.01°
-    /// - `r3_headsup`:  R3-Eingabe: 1 = heads-up, −1 = heads-down (für N61)
+    /// - `r1`: R1-Eingabe (Einheit je nach Noun, s.o.)
+    /// - `r2`: R2-Eingabe
+    /// - `r3`: R3-Eingabe
     /// - `ctx`: Zustand
     ///
     /// # AGC source
     /// `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, NVSBWAIT / CHARIN.
     /// `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, N61.
-    pub fn accept_load(r1_centideg: i32, r2_centideg: i32, r3_headsup: i32, ctx: &mut AgcContext) {
+    pub fn accept_load(r1: i32, r2: i32, r3: i32, ctx: &mut AgcContext) {
         let noun = ctx.display.noun;
 
-        // N61: LAT(SPL), LNG(SPL), HEADSUP
-        // Einheit: 0.01° → rad; 1° = π/180 rad → 0.01° = π/18000 rad
-        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N61.
-        // Andere Nouns: keine Aktion (Sub-Task 5+ ergänzt weitere)
-        if noun.val() == 61 {
-            const CENTIDEG_TO_RAD: f64 = core::f64::consts::PI / 18_000.0;
-            ctx.guidance.splashdown_lat = r1_centideg as f64 * CENTIDEG_TO_RAD;
-            ctx.guidance.splashdown_lon = r2_centideg as f64 * CENTIDEG_TO_RAD;
-            ctx.guidance.heads_up = r3_headsup >= 0;
+        match noun.val() {
+            // N22: THETAD — Gimbal-Zielwinkel für CoarseAlign
+            // Einheit: 0.01° (Centideg) → rad; 0.01° = π/18 000 rad
+            // AGC source: Comanche055/PINBALL_NOUN_TABLES.agc, N22 (THETAD).
+            22 => {
+                const CENTIDEG_TO_RAD: f64 = core::f64::consts::PI / 18_000.0;
+                ctx.guidance.thetad = [
+                    r1 as f64 * CENTIDEG_TO_RAD,
+                    r2 as f64 * CENTIDEG_TO_RAD,
+                    r3 as f64 * CENTIDEG_TO_RAD,
+                ];
+                stop_flash(&mut ctx.display);
+            }
 
-            // Blinken stoppen — Eingabe abgeschlossen
-            ctx.display.flash_state = false;
-            ctx.display.flash_counter = 0;
-            ctx.display.lights.verb_noun_flash = false;
+            // N61: LAT(SPL), LNG(SPL), HEADSUP
+            // Einheit: 0.01° → rad; 1° = π/180 rad → 0.01° = π/18 000 rad
+            // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N61.
+            61 => {
+                const CENTIDEG_TO_RAD: f64 = core::f64::consts::PI / 18_000.0;
+                ctx.guidance.splashdown_lat = r1 as f64 * CENTIDEG_TO_RAD;
+                ctx.guidance.splashdown_lon = r2 as f64 * CENTIDEG_TO_RAD;
+                ctx.guidance.heads_up = r3 >= 0;
+                stop_flash(&mut ctx.display);
+            }
+
+            // N93: DELTA GYRO ANGLES — Korrekturwinkel für FineAlign (IMU-Torquing)
+            // Einheit: 0.001° (Millideg) → rad; 0.001° = π/180 000 rad
+            // Der Simulator nutzt thetad als Proxy (keine separate Gyro-Torque-Variable).
+            // AGC source: Comanche055/PINBALL_NOUN_TABLES.agc, N93 (DELTA GYRO ANGLES).
+            93 => {
+                const MILLIDEG_TO_RAD: f64 = core::f64::consts::PI / 180_000.0;
+                ctx.guidance.thetad = [
+                    r1 as f64 * MILLIDEG_TO_RAD,
+                    r2 as f64 * MILLIDEG_TO_RAD,
+                    r3 as f64 * MILLIDEG_TO_RAD,
+                ];
+                stop_flash(&mut ctx.display);
+            }
+
+            // Andere Nouns: keine Aktion
+            _ => {}
         }
     }
 

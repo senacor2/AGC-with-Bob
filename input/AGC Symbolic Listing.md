@@ -4763,11 +4763,724 @@ If |MPAC<sub>tp</sub>| = 0:
    MPAC<sub>tp</sub> = +0
    MPTEMP = 14
    Return
-If 
+If MPAC<sub>tp</sub> < -2<sup>-14</sup>:
+   Proceed to "POODOO" (pattern 21302<sub>8</sub>) CM only
+   Proceed to "POODOO1" (pattern 21302<sub>8</sub>, TS = (LOC, BANKSET)) LM only
+If MPAC<sub>tp</sub> < 0:
+   MPAC<sub>dp</sub> = 0
+   If MPAC+0 was non-zero, MPTEMP = 0; Return
+   If MPAC+1 was non-zero, MPTEMP = 7; MPAC+2 = 0; Return
+   MPAC+2 = 0
+   MPTEMP = 14
+   Return
+If MPAC+0 = 0:
+   Shift MPAC<sub>tp</sub> left 14 places
+   MPAC+2 = 0
+   MPTEMP = 7
+   If MPAC+0 = 0: (i.e. original MPAC+1)
+      Shift MPAC<sub>tp</sub> left 14 places
+      MPAC+2 = 0
+      MPTEMP = 14
+If MPAC+0 < 1/4:
+   Shift MPAC<sub>tp</sub> left 2 places
+   MPTEMP = MPTEMP+1
+   Repeat check against 1/4
+If MPAC+0 >= 1/2:
+   TS<sub>1</sub> = 0.5884 (MPAC+0) + 0.4192 (single precision)
+If MPAC+0 < 1/2:
+   TS<sub>1</sub> = 0.8324 (MPAC+0) + 0.2974 (single precision)
+TS<sub>1</sub> = (1/2 (MPAC+0))/TS<sub>1</sub> + 1/2 TS<sub>1</sub> (single precision)
+TS<sub>1</sub> 1/2 MPAC<sub>dp</sub>
+MPAC<sub>dp</sub> = 1/2 TS<sub>1</sub> (right shift 1, result dp)
+TS<sub>2</sub> = single precision quotient from TS<sub>dp</sub> / TS<sub>1</sub> (using hardware divide order DV)
+TS<sub>3</sub> = remainder from division to compute TS<sub>2</sub>, single precision
+TS<sub>4</sub> = TS<sub>3</sub> / TS<sub>1</sub> (single precision, L register zeroed)
+MPAC<sub>dp</sub> = MPAC<sub>dp</sub> + TS<sub>2</sub> + 2<sup>-14</sup> TS<sub>4</sub> (carries propagate)
+If above addition overflows, set MPAC<sub>dp</sub> = +MAX
+Return
+````
+
+#### TAD, TAD* - Triple Precision Add
+
+Order: 1 01 and 1 03 (indexed)
+
+Replace MPAC<sub>tp</sub> by (quantity at specified address, triple precision)
+ + MPAC<sub>tp</sub>. Set OVFIND if overflow.
+
+````
+MPAC<sub>tp</sub> = E<sub>ADDRWD(tp)</sub + MPAC<sub>tp</sub>
+If most significant part overflows:
+   MPAC<sub>dp</sub> = MPAC<sub>dp</sub> + 2<sup>28</sup> sgn MPAC+0
+   If above computation overflows:
+      Set OVFIND
+Proceed to "DANZIG"
+````
 
 ### Vector Computation Operations
 
+#### ABVAL - Absolute Value (length) of Vector
+
+Order: 0 26
+
+No Address
+
+Load into MPAC<sub>tp</sub> the length of MPAC<sub>vc</sub> (same scaling
+as MPAC<sub>vc</sub>). Leave in LVSQAURE the square of this length.
+Set OVFIND if overflow.
+
+````
+If MODE != VC:
+   Proceed to ABS
+TS<sub>tp</sub> = MPAC<sub>x</sub><sup>2</sup> + MPAC<sub>y</sub><sup>2</sup>
+If most significant part overflows:
+   Set OVFIND
+MPAC<sub>tp</sub> = TS<sub>tp</sub> + MPAC<sub>z</sub><sup>2</sup>
+If most significant part overflows:
+   MPAC<sub>dp</sub> = MPAC<sub>dp</sub> + 2<sup>28</sup> sgn MPAC+0
+   If above computation overflows:
+      Set OVFIND
+LVSQUARE = MPAC<sub>dp</sub> (Relative addresses 34D-35D, see VID)
+MODE = DP
+Proceed to SQRT instruction to form square root of
+MPAC<sub>tp</sub> and then exit to "DANZIG". Length of vector left
+in MPAC<sub>dp</sub>, has same scale factor as original MPAC<sub>vc</sub>.
+
+#### BSVU, BSVU* - Backwards Vector Subtract
+
+Order: 1 26 and 3 26 (indexed)
+
+Replace MPAC<sub>vc</sub> by (vector at specified address) MPAC<sub>vc</sub>.
+Set OVFIND if overflow.
+
+````
+MPAC<sub>i</sub> = E<sub>ADDRWD(i)</sub> - MPAC<sub>i</sub>
+If most significant half overflows:
+   MPAC<sub>i</sub> = MPAC<sub>i</sub> + 2<sup>28</sup> sgn MPAC+0<sub>i</sub>
+   If above computation overflows:
+      Set OVFIND
+Proceed to "DANZIG"
+````
+
+#### DOT, DOT* - Dot product of vectors
+
+Orders: 1 27 and 3 27 (indexed)
+
+Load into MPAC<sub>tp</sub> the dot product of MPAC<sub>vc</sub> and
+(vector at specified address). Set OVFIND if overflow.
+
+````
+AVEC = MPAC<sub>vc</sub>
+BVEC = E<sub>ADDRWD(vc)</sub>
+Perform "DOTCOM"
+MODE = DP
+Proceed to "DANZIG"
+
+##### DOTCOM (Routine used by DOT, MXV, etc)
+
+````
+AMAL = AVEC<sub>x</sub>
+BMBL = BVEC<sub>x</sub>
+Perform "MULCOM" (see DMP)
+BUF<sub>tp</sub> = MPAC<sub>tp</sub>
+AMAL = AVEC<sub>y</sub>
+BMBL = BVEC<sub>y</sub>
+Perform "MULCOM" (see DMP)
+BUF<sub>tp</sub> = BUF<sub>tp</dub> + MPAC<sub>tp</sub>
+If most significant part overflows:
+   Set OVFIND
+AMAL = AVEC<sub>z</sub>
+BMBL = AVEC<sub>z</sub>
+Perform "MULCOM"
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + BUF<sub>tp</sub>
+If most significant part overflows:
+   MPAC<sub>dp</sub> = MPAC<sub>dp</sub> + 2<sup>28</sup> sgn MPAC+0
+   If above computation overflows:
+      Set OVFIND
+Return
+````
+
+#### MVC, MVX* - Matrix times Vector
+
+Order: 1 13 and 3 13 (indexed)
+
+Use the matrix stored with double precision components (3x3) at the
+specified address to premultiply with the vector in MPAC<sub>vc</sub>,
+and leave the result in MPAC<sub>vc</sub>. Set OVFIND if overflow.
+Matrix is stored with the first element in E<sub>ADDRWD(dp)</sub>, and
+successive elements of first row, then second row, then third row
+in consecutive cells after the first element. Computation forms x
+component of result as a dot product of first row and the vector,
+y component of result as a dot product of the second row and the vector,
+and z component of result as a dot product of third row and the vector.
+Instruction will not push up properly.
+
+````
+VBUF = MPAC<sub>vc</sub>
+AVEC = VBUF<sub>vc</sub>
+BVEC = E<sub>ADDRWD(vc)</sub>
+Perform "DOTCOM" (see DOT)
+BUF<sub>x</sub> = MPAC<sub>dp</sub>
+AVEC = VBUF<sub>vc</sub>
+BVEC = E<sub>ADDRWD+6(vc)</sub>
+Perform "DOTCOM" (see DOT)
+BUF<sub>y</sub> = MPAC<sub>dp</sub>
+AVEC = VBUF<sub>vc</sub>
+BVEC = E<sub>ADDRWD+12(vc)</sub>
+Perform "DOTCOM" (see DOT)
+BUF<sub>z</sub> = MPAC<sub>dp</sub>
+MPAC<sub>vc</sub> = BUF<sub>vc</sub>
+Proceed to "DANZIG"
+````
+
+#### UNIT - Form a unit vector
+
+Order: 0 24
+
+No Address
+
+Replace MPAC<sub>vc</sub> with a unit vector corresponding to 
+MPAC<sub>vc</sub>, and with scale factor B1. Leave in LVSQUARE
+the square of the original vector length, and in LV the vector
+length (same scale factor as original MPAC<sub>vc</sub>).
+Set OVFIND if overflow.
+
+````
+Force sign agreement of each component in MPAC<sub>vc</sub>
+VBUF = MPAC<sub>vc</sub>
+TS<sub>tp</sub> = MPAC<sub>x</sub><sup>2</sup> + MPAC<sub>x</sub><sup>2</sup>
+If most significant part overflows:
+   Set flag indicating overflow
+MPAC<sub>tp</sub> = TS<sub>tp</sub> + MPAC<sub>z</sub><sup>2</sup>
+If most significant part overflows:
+   MPAC<sub>dp</sub> = MPAC<sub>dp</sub> 2<sup>28</sup> sgn MPAC+0
+   If above computation overflows:
+      Set flag indicating overflow
+If flag indicating overflow is set:
+   Set OVFIND
+   MPAC<sub>x</sub> = MAX (sign not significant)
+   Proceed to "DANZIG"
+LVSQUARE = MPAC<sub>dp</sub> (Relative addresses 34D-35D, see VID)
+Perform "SQRTSUB"
+If MPAC+0 = 0: (i.e. input to SQRTSUB was 0)
+   LV = 0 (Relative addresses 36D-37D)
+   Set OVFIND
+   MPAC<sub>x</sub> = MAX (sign not significant)
+   Proceed to "DANZIG"
+LV = 2<sup>-MPTEMP</sup> MPAC<sub>dp</sub> (MPTEMP computed in SQRTSUB)
+If MPTEMP = 0:
+   Shift each component of VBUF right 1 place
+If MPTEMP != 0:
+   Shift each component of VBUF left 1 place (unit vector scaling B1)
+TS = MPAC<sub>dp</sub>
+Divide each component of VBUF by TS, setting DVSIGN to sign of VBUF
+component and using algorithm "DIVCOM" (see BDDV), starting at step #4
+(after making Num positive).
+MPAC<sub>vc</sub> = vector results from previous line
+Proceed to "DANZIG"
+````
+
+#### VAD, VAD* - Vector Add
+
+Order: 1 24 and 3 24 (indexed)
+
+Replace MPAC<sub>vc</sub> by (vector at specified address) + MPAC<sub>vc</sub>.
+Set OVFIND if overflow.
+
+````
+Perform the following for i = x, y, z:
+   MPAC<sub>i</sub> = E<sub>ADDRWD(i)</sub> + MPAC<sub>i</sub>
+   If most significant half overflows:
+      MPAC<sub>i</sub> = MPAC<sub>i</sub> + 2<sup>28</sup>sgn MPAC+0</sub>i</sub>
+      If above computation overflows:
+         Set OVFIND
+Proceed to "DANZIG"
+````
+
+#### VCOMP - Vector Complement
+
+Order: 0 20
+
+No Address
+
+Replace MPAC<sub>vc</sub> with the complement of MPAC<sub>vc</sub>.
+
+````
+If Mode != VC:
+   Proceed to DCOMP instruction
+MPAC<sub>vc</sub> = - MPAC<sub>vc</sub>
+Proceed to "DANZIG"
+````
+
+#### VDEF - Vector Define
+
+Order: 0 22
+
+No Address
+
+Load MPAC<sub>vc</sub> with information in MPAC<sub>vc</sub>
+(x component), top two cells in push down list (y component),
+and second from top pair of cells in push down list (z component).
+
+````
+MPAC<sub>x</sub> = MPAC<sub>dp</sub>
+MPAC<sub>y</sub> = E<sub>PUSHLOC-2(dp)</sub>
+MPAC<sub>z</sub> = E<sub>PUSHLOC-4(dp)</sub>
+PUSHLOC = PUSHLOC - 4
+MODE = VC
+Proceed to "DANZIG"
+````
+
+#### VPROJ, VPROJ* - Vector Projection on New Vector
+
+Order: 1 31 and 3 31 (indexed)
+
+Replace MPAC<sub>vc</sub> with the dot product of MPAC<sub>vc</sub>
+and (vector at specified address) times (vector at specified address).
+Set OVFIND if overflow. Scale factors add.
+
+````
+AVEC = MPAC<sub>vc</sub>
+BVEC = E<sub>ADDRWD(vc)</sub>
+Perform "DOTCOM" (see DOT)
+MODE = DP
+Proceed to VXSC instruction to complete manipulation and then
+exit to "DANZIG"
+````
+
+#### VSQ - Vector Square Operation
+
+Order: 0 30
+
+No Address
+
+Load into MPAC<sub>tp</sub> the square of the length of the vector
+in MPAC<sub>vc</sub>, with scale factor twice that of the vector.
+Set OVFIND if overflow.
+
+````
+TS<sub>tp</sub> = MPAC<sub>x</sub><sup>2</sup> + MPAC<sub>y</sub><sup>2</sup>
+If most significant part overflows:
+   Set OVFIND
+MPAC<sub>tp</sub> = TS<sub>tp</sub> + MPAC<sub>z</sub><sup>2</sup>
+If most significant part overflows:
+   MPAC<sub>dp</sub> = MPAC<sub>dp</sub> + 2<sup>28</sup> sgn MPAC+0
+   If above computation overflows:
+      Set OVFIND
+MODE = DP
+Proceed to "DANZIG"
+````
+
+#### VSU, VSU* - Vector Subtract
+
+Order: 1 25 and 3 25 (indexed)
+
+Replace MPAC<sub>vc</sub> with MPAC<sub>vc</sub> - (vector at
+specified address). Set OVFIND if overflow.
+
+````
+Perform the following for i = x, y, z:
+   MPAC<sub>i</sub> = MPAC<sub>i</sub> - E<sub>ADDRWD(i)</sub>
+   If most significant half overflows:
+      MPAC<sub>i</sub> = MPAC<sub>i</sub> + 2<sup>28</sup> sgn MPAC+0<sub>i</sub>
+      If above computation overflows:
+         Set OVFIND
+Proceed to "DANZIG"
+````
+
+#### VXM, VXM* - Vector Times Matrix
+
+Order: 1 16 and 3 16 (indexed)
+
+Use the matrix stored with double precision components
+(3x3) at the specified address to postmultiply the
+vector in MPAC<sub>vc</sub> and leave the resull in 
+MPAC<sub>vc</sub>. Set OVFIND if overflow. 
+Matrix is stored with first element
+at E<sub>ADDRWD(dp)</sub>, and successive elernents of first row, 
+then second row; then third row jn consecutive cells after
+the first element. Computation forms x component of
+result as dot product of first column and the vector;
+y component of result as dot product of second column
+and the vector; and z component of result as dot product
+of third colunn and the vector. Effect is equivalent
+to premultiplicaiion of the vector by the transpose
+of the given matrix (cf. MXV). Instruction will not
+push up properly.
+
+````
+VBUF = MPAC<sub>vc</sub>
+AVEC = VBUF<sub>vc</sub>
+BVEC = (E<sub>ADDRWD(dp)</sub>, E<sub>ADDRWD+6(dp)</sub>, E<sub>ADDRWD+12(dp)</sub>)
+Perform "DOTCOM"
+BUF<sub>x</sub> = MPAC<sub>dp</sub>
+AVEC = VBUF<sub>vc</sub>
+BVEC = (E<sub>ADDRWD+2(dp)</sub>m E<sub>ADDRWD+8(dp)</sub>m E<sub>ADDRWD+14(dp)</sub>)
+Perform "DOTCOM"
+BUF<sub>y</sub> = MPAC<sub>dp</sub>
+AVEC = VBUF<sub>vc</sub>
+BVEC = (E<sub>ADDRWD+4(dp)</sub>m E<sub>ADDRWD+10(dp)</sub>m E<sub>ADDRWD+16(dp)</sub>)
+Perform "DOTCOM"
+BUF<sub>z</sub> = MPAC<sub>dp</sub>
+MPAC<sub>vc</sub> = BUF<sub>vc</sub>
+Proceed to "DANZIG"
+````
+
+#### VXSC, VXSC* - Vector Times Scalar
+
+Order: 1 03 and 3 03 (indexed)
+
+Multiply a vector times a scalar and store the result in MPAC<sub>vc</sub>.
+If have been computing with vectors, the quantity at the specified address
+is considered a scalar; if have computing with scalars, the quantity at
+the specified address is considered a vector. Rounding is performed
+for each component and OVFIND is set if overflow.
+
+````
+If MODE = VC:
+   VBUF = MPAC<sub>vc</sub>
+   BMBL = E<sub>ADDRD(dp)</sub>
+If MODE != VC:
+   VBUF = E<sub>ADDRWD(vc)</sub>
+   BMBL = MPAC<sub>dp</sub>
+AMAL = VBUF<sub>x</sub>
+Perform "MULCOM"
+TS<sub>x</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+If most significant part overflows:
+   Set OVFIND
+AMAL = VBUF<sub>y</sub>
+Perform "MULCOM"
+TS<sub>y</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+If most significant part overflows:
+   Set OVFIND
+AMAL = VBUF<sub>z</sub>
+Perform "MULCOM"
+TS<sub>z</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+If most significant part overflows:
+   Set OVFIND
+MPAC<sub>vc</sub> = TS<sub>vc</sub>
+MODE = VC
+Proceed to "DANZIG"
+````
+
+#### VXV, VXV* - Vector Cross Product
+
+Order: 1 30 and 3 30 (indexed)
+
+Replace MPAC<sub>vc</sub> with (vector at specified address) * MPAC<sub>vc</sub>. Set OVFIND if overflow.
+
+````
+(M<sub>x</sub>, M<sub>y</sub>, M<sub>z</sub>) = MPAC<sub>vc</sub>
+(A<sub>x</sub>m A<sub>y</sub>m A<sub>z</sub>) = E<sub>ADDRWD(vc)</sub>
+All multiplications done with "MULCOM"
+TS<sub>z</sub> = M<sub>x</sub> A<sub>y</sub> - M<sub>y</sub> A<sub>x</sub>
+If most significant part overflows:
+   TS<sub>z</sub> = TS<sub>z</sub> + 2<sup>28</sup> sgn TS+0<sub>z</sub>
+   If above computation overflows:
+      Set OVFIND
+TS<sub>y</sub> = M<sub>z</sub> A<sub>x</sub> - M<sub>x</sub> A<sub>z</sub>
+If most significant part overflows:
+   TS<sub>y</sub> = TS<sub>y</sub> + 2<sup>28</sup> sgn TS+0<sub>y</sub>
+   If above computation overflows:
+      Set OVFIND
+TS<sub>x</sub> = M<sub>y</sub> A<sub>z</sub> - M</sub>z</sub> A<sub>y</sub>
+If most significant part overflows:
+   TS<sub>x</sub> = TS<sub>x</sub> + 2<sup>28</sup> sgn TS+0<sub>x</sub>
+   If above computation overflows:
+      Set OVFIND
+MPAC<sub>vc</sub> = TS<sub>vc</sub>
+Proceed to "DANZIG"
+````
+
+#### V/SC, V/SC* - Vector Divide by Scalar
+
+Order: 1 07 and 3 07 (indexed)
+
+Divide a vector by a scalar and store the result in MPAC<sub>vc</sub>.
+If have been computing with vectors, the quantity at the specified address
+is considered a scalar; if have been computing with scalars, the quantity
+at the specified address is considered a vector. Set OVFIND if overflow.
+
+````
+If MODE = VC:
+   BUF<sub>dp</sub> = E<sub>ADDRWD(dp)</sub>
+If MODE != VC:
+   BUF<sub>dp</sub> = MPAC<sub>dp</sub>
+   MPAC<sub>vc</sub> = E<sub>ADDRWD(vc)</sub>
+   MODE = VC
+Force sign agreement for each component of MPAC<sub>vc</sub>
+Force sign agreement of BUF<sub>dp</sub>
+If BUF+0 = 0:
+   Shift MPAC<sub>vc</sub> left 14 places
+   If any component of MPAC<sub>vc</sub> overflows:
+      MPAC<sub>x</sub> = MAX (sign is not significant)
+      Set OVFIND
+      Proceed to "DANZIG"
+If BUF<sub>dp</sub> = 0:
+   MPAC<sub>x</sub> = MAX (sign is not significant)
+   Set OVFIND
+   Proceed to "DANZIG"
+If |BUF<sub>dp</sub>| <= magnitude of any component of MPAC<sub>vc</sub>:
+   MPAC<sub>x</sub> = +MAX sgn (overflowing division)
+   Set OVFIND
+   Proceed to "DANZIG"
+Divide each component of MPAC<sub>vc</sub> by BUF<sub>dp</sub>, setting
+DVSIGN to proper value and using algorithm of "DIVCOM", starting at step #1
+(with Den = BUF<sub>dp</sub> of course).
+MPAC<sub>vc</sub> = vector results from previous line.
+Proceed to "DANZIG"
+````
+
 ### Shifting Operations
+
+All general shifting instructions (SL, SLR, SR, SRR, VSL and VSR) use
+the same octal order (1 23) with distinction between them made by bits
+10-9 of the address-word parameter, and by the value of MODE.
+The format of the address-word parameter is as follows:
+
+| Bits | Value |
+| --- | --- |
+| 15 | 0 |
+| 14 | 1 |
+| 13-11 | 0 |
+| 10 | 1 for rounded shifts, 0 for unrounded shifts (alwasys 0 for vector shifts) |
+| 9 | 1 for shift right, 0 for shift left |
+| 8 | 1 (as a "pseudo-sign bit", for indexed shifts) |
+| 7-1 | amount to shift |
+
+If index register 2 is specified, the complete word is complemented;
+as stored in memory, of course one is added to the quantity (as
+discussed in section VIA for all Indexable Operations).
+
+#### NORM, NORM* - Normalize (SLC may also be used)
+
+Order: 1 37 and 3 37 (indexed)
+
+Force sign agreement of MPAC<sub>tp</sub>, and then shift left until 
+most significant magnitude bit is different from the sign bit. Store
+negative of the number of shifts performed in the address specified
+(single precision). Order will not push up properly.
+
+````
+TS = 0
+Force sign agreement of MPAC<sub>tp</sub> (unless magnitude 0)
+If MPAC<sub>tp</sub> = 0:
+   E<sub>ADDRWD(sp)</sub> = -0
+   Proceed to "DANZIG"
+Loop:
+IF MPAC+0 + MPAC+0 overflows:
+   E<sub>ADDRWD(sp)</sub> = -TS
+   Proceed to "DANZIG"
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC<sub>tp</sub> (i.e. left shift of 1 place)
+TS = TS + 1
+Proceed to "Loop"
+````
+
+#### SL, SL* - Scalar Shift Left
+
+Order: 1 23 and 3 23 (indexed)
+
+Address bit 10-9 = 00<sub>2</sub>
+
+Shift MPAC<sub>tp</sub> left by appropriate number of places specified
+by address-word parameter. If shift amount is negative, shift right by the
+corresponding number of places. Set OVFIND if overflow.
+
+````
+If bit 7-1 of ADDRWD = 0:
+   Proceed to "DANZIG"
+MPTEMP = (bits 7-1 of ADDRWD) - 1
+If bit 8 of ADDRWD = 0:
+   MPTEMP = 126 - MPTEMP
+   Proceed to fourth line of SR instruction
+   (Number of shits effectively stored as 128 + count
+    in bits 8-1; if SL* causes number to be negative,
+    then MPTEMP set to (number of right shifts - 1),
+    and SR performed).
+If MODE = VC:
+   Proceed to VSL instruction
+Shift MPAC<sub>tp</sub> left by (MPTEMP + 1) places by performing:
+   MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC<sub>tp</sub> repeatedly
+   If most significant part overflows (for any shift):
+      Set OVFIND
+      Continue shifting
+Proceed to "DANZIG"
+````
+
+#### SL1, SL2, SL3, SL4 - Short Scalar Shift Left
+
+Order: 0 05, 0 15, 0 25, 0 35 resp.
+
+No Address
+
+Shift MPAC<sub>tp</sub> left by the number of places specified by
+the operation code. Set OVFIND if overflow.
+
+````
+If MODE = VC:
+   proceed to VSLi instruction.
+Shift MPAC<sub>tp</sub> left by the appropriate number of placec,
+by performing:
+   MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC<sub>tp</sub>
+   If most significant part overflows: (for any shift)
+      Set OVFIND
+      Continue shifting
+Proceed to "DANZIG"
+````
+
+#### SLR, SLR* - Scalar Shift Left and Round
+
+Order: 1 23 and 3 23 (indexed)
+
+Address bit 10-9 = 10<sub>2</sub>.
+
+Shift MPAC<sub>tp</sub> left by appropriate number of places
+specified by address-word parameter. If shift amount is
+negative, shift right by the corresponding number of places.
+Round MPAC<sub>tp</sub> to double precision after shifting.
+Set OVFIND if overflow.
+
+````
+If bits 7-1 of ADDRWD = 0:
+   MODE = DP
+   MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+   If most significant part overflows:
+      Set OVFIND
+   MPAC+2 = 0
+   Proceed to "DANZIG"
+MPTEMP = (bits 7-1 of ADDRWD) - 1
+If bit 8 of ADDRWD = 0:
+   MPTEMP = 126 - MPTEMP
+   Proceed to fourth line of SRR instruction
+If MODE = VC:
+   Proceed to VSL instruction
+Shift MPAC<sub>tp</sub> left by MPTEMP + 1 places, by performing:
+   MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC<sub>tp</sub> repeatedly
+   If most significant part overflows (for any shift):
+      Set OVFIND
+      Continue shifting
+MODE = DP
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+If most significant part overflows:
+   Set OVFIND
+MPAC+2 = 0
+Proceed to "DANZIG"
+````
+
+#### SL1R, SL2R, SL3R, SL4R - Short Scalar Shift Left and Round
+
+Order: 0 01, 0 11, 0 21, 0 31 resp.
+
+No Address
+
+Shift MPAC<sub>tp</sub> left by the number of places specified by
+the operation code. Round MPAC<sub>tp</sub> to double precision
+after shifting. Set OVFIND if overflow.
+
+````
+If MODE = VS:
+   Proceed to VSLi instruction
+Shift MPAC<sub>tp</sub> left by the appropriate number of places,
+by performing:
+   MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC<sub>tp</sub>
+   If most significant part overflows:
+      Set OVFIND
+      Continue shifting
+MODE = DP
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC + 2 (carries propagate)
+If most significant part overflows:
+   Set OVFIND
+MPAC+2 = 0
+Proceed to "DANZIG"
+````
+
+#### SR, SR* - Scalar Shift Right
+
+Order: 1 23 and 3 23 (indexed)
+
+Address 10-9 = 01<sub>2</sub>
+
+Shift MPAC<sub>tp</sub> right by appropriate number of places
+specified by address word parameter. If shift amount is negative,
+shift left by the corresponding number of places.
+Set OVFIND if overflow (only on left shift)
+
+````
+If bits 7-1 of ADDRWD = 0:
+   Proceed to "DANZIG"
+MPTEMP = (bits 7-1 of ADDRWD) - 1
+If bit 8 of ADDRWD = 0:
+   MPTEMP = - (MPTEMP - 126)
+   Proceed to fourth line of SL instruction
+If MODE = VC:
+   Proceed to VSR instruction
+Shift MPAC<sub>tp</sub> right by (MPTEMP + 1) places, by multiplying
+by appropriate negative power of 2 (shifts in excess of 13 are
+accomplished by movement of the components of MPAC<sub>tp</sub> as
+complete words, until the remaining number of shifts is less than 14).
+Proceed to "DANZIG"
+````
+
+#### SR1, SR2, SR3, SR4 - Short Scalar Shift Right
+
+Order: 0 07, 0 17, 0 27, 0 37 resp.
+
+No Address
+
+Shift MPAC<sub>tp</sub> right by the number of places specified by
+the operation code.
+
+````
+If MODE = VC:
+   Proceed to VSRi instruction
+Shift MPAC<sub>tp</sub> right by the appropriate number of places,
+by multiplying by appropriate negative power of 2
+Proceed to "DANZIG"
+````
+
+#### SRR, SRR* - Scalar Shift Right and Round
+
+Order 1 23 and 3 23 (indexed)
+
+Address bit 10-9 = 11<sub>2</sub>
+
+Shift MPAC<sub>tp</sub> right by appropriate number of places
+specfied by address-word parameter. If shift amount is
+negative, shift left by the corresponding number of places.
+Round MPAC<sub>tp</sub> to double precision after shifting.
+Set OVFIND if overflow.
+
+````
+If bits 7-1 of ADDRWD = 0:
+   MODE = DP
+   MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+   If most significant part overflows:
+      Set OVFIND
+   MPAC+2 = 0
+   Proceed to "DANZIG"
+MPTEMP = (bits 7-1 of ADDRWD) - 1
+If bit 8 of ADDRWD = 0:
+   MPTEMP = - (MPTEMP -126)
+   Proceed to fourth line of SLR instruction
+If MODE = VC:
+   Proceed to VSR instruction
+Shift MPAC<sub>tp</sub> right by MPTEMP + 1 places, by multiplying
+by appropriate negative power of 2 (shifts in excess of 13 are
+accomplished by movement of the components of MPAC<sub>tp</sub>
+as complete words, until the remaining number of shifts is less than 14).
+MPAC<sub>tp</sub> = MPAC<sub>tp</sub> + MPAC+2 (carries propagate)
+MODE = DP
+MPAC+2 = 0
+Proceed to "DANZIG"
+````
+
+#### SR1R, SR2R, SR3R, SR4R - Short Scalar Shift Right and Round
+
+Order: 0 03, 0 13, 0 23, 0 33 resp.
+
+No Address
+
+
+
 
 ### Transmission Operations
 
