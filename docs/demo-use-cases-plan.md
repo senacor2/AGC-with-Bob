@@ -34,7 +34,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 1 — Scenario Loader: Modul und Dateiformat
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: Ein neues Modul `agc-sim/src/scenarios.rs` anlegen, das Szenarien aus einfachen Textdateien (Key=Value) liest und den `SimState`-Bahnzustand setzt. Dies ist die Grundlage für alle Use Cases: Ohne vorbereitete Ausgangslage wären die Szenarien nicht reproduzierbar startbar.
 
@@ -61,7 +61,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 2 — CLI-Flag `--scenario` und '@'-Taste in der TUI
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: Den Scenario Loader aus Sub-Task 1 in der TUI und per CLI erreichbar machen. Das CLI-Flag ermöglicht automatisierte Tests und CI-Läufe; die '@'-Taste die interaktive Nutzung während einer Demo.
 
@@ -91,7 +91,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 3 — `accept_load()` für N22 und N93 erweitern
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: `accept_load()` in `dispatcher.rs` unterstützt bisher nur N61 (Splashdown-Koordinaten). Für den IMU-Alignment-Use-Case (P51/P52) müssen N22 (THETAD — Ziel-Gimbal-Winkel) und N93 (Delta-Gyro-Winkel) ebenfalls per V25-Crew-Eingabe befüllt werden können. Ohne diese Erweiterung bleiben die Eingaben ohne Wirkung.
 
@@ -123,7 +123,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 4 — Use Case UC-1: IMU-Alignment (P51 → P52)
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: Den vollständigen IMU-Alignment-Ablauf als Integrationstests und Crew-Checkliste dokumentieren und verifizieren. Dies ist der einfachste eigenständige Use Case ohne vorherige Guidance-Programme.
 
@@ -155,7 +155,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 5 — Use Case UC-2: TEI-Vorbereitung (P30 → P40)
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: Den Trans-Earth-Injection-Burn als Use Case abbilden: P30 berechnet den Burn-Plan, P40 führt ihn aus. Das ist der kernige Guidance-Demo-Fall für interplanetare Manöver.
 
@@ -188,7 +188,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 6 — Use Case UC-3: Entry (P61 → P64 → P67)
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: Den Wiedereintritts-Ablauf als Use Case abbilden: P61 bereitet den Eintritt vor (Splashdown-Ziel eingeben), P64 übernimmt die Constant-Drag-Phase, P67 zeigt den terminalen Anflug. Das ist der visuell reichhaltigste Use Case mit mehreren N-Nummern.
 
@@ -219,7 +219,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 7 — Gemeinsame Test-Infrastruktur und Checklisten-Format
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: Die in Sub-Tasks 4–6 doppelt auftauchenden Test-Helfer (press_keys, scenario-load-Wrapper) in ein gemeinsames Test-Hilfsmodul auslagern, damit die Use-Case-Tests DRY bleiben. Außerdem ein einheitliches Checklisten-Format für alle Markdown-Dokumente festlegen.
 
@@ -241,7 +241,7 @@ agc-sim/tests/                ← neue Integrationstests pro Use Case
 
 ### Sub-Task 8 — Automatische Zentralkörper-Auswahl im Physik-Integrator
 
-**Status**: [ ] pending
+**Status**: [x] done — commit `2e5cd8d`
 
 **Intent**: [`sim_loop.rs:359`](agc-sim/src/sim_loop.rs:359) verwendet hartkodiert `StepParams::earth_ballistic()` — damit rechnet der RK4-Integrator immer mit μ_Erde und R_Erde. Für das `tei_pre.scenario` (Mondorbit, r ≈ 1 847 km) führt das dazu, dass die Gravitationsbeschleunigung um Faktor 81 zu groß ist und die Bahn in Sekunden kollabiert. Sub-Task 8 ergänzt eine automatische Zentralkörper-Erkennung: der Integrator wählt `Body::Moon` wenn der Bahnradius kleiner als eine Schwelle ist, die eindeutig in Mondnähe liegt.
 
