@@ -5,12 +5,15 @@
 //!
 //! # P61-Startsequenz
 //! Crew-Sequenz zum Starten von P61 (Entry Preparation):
-//! `VERB 3 7 ENTER NOUN 6 1 ENTER`
+//! `V37E61E` (VERB 3 7 ENTER 6 1 ENTER) — Programmnummer direkt ohne NOUN-Taste.
 //! → PROG = 61, active_program = 61, display.verb = 37, display.noun = 61.
 //!
+//! Quelle: "The Apollo Guidance Computer", S. 277 (Buchseitenzählung):
+//! "the input sequence for selecting a program (e.g. 63) is V37E63E."
+//!
 //! # TEI/LOI-Sequenz (P30 → P40)
-//! `VERB 3 7 ENTER NOUN 3 0 ENTER` → P30 aktiv
-//! `VERB 3 7 ENTER NOUN 4 0 ENTER` → P40 aktiv
+//! `V37E30E` → P30 aktiv
+//! `V37E40E` → P40 aktiv
 //!
 //! # Monitor-Modus (V16)
 //! Nach `VERB 1 6 ENTER NOUN 6 7 ENTER` wird V16N67 aktiv:
@@ -39,20 +42,25 @@ fn press_keys(state: &mut SimState, keys: &[u8]) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: P61-Startsequenz — PROG=61 nach V37 N61 ENTER
+// Test 1: P61-Startsequenz — PROG=61 nach V37E61E (ohne NOUN-Taste)
 // ---------------------------------------------------------------------------
 
-/// Crew drückt `VERB 3 7 ENTER NOUN 6 1 ENTER`.
-/// Erwartet: display.major_mode = 61, active_program = 61, verb = 37, noun = 61.
+/// Crew drückt `V37E61E`: VERB 3 7 ENTER 6 1 ENTER.
+///
+/// Korrekte AGC-Eingabesequenz: Programmnummer wird **direkt** ohne NOUN-Taste
+/// eingegeben. Nach V37E schaltet der Automat den Noun-Modus automatisch ein.
+///
+/// Quelle: "The Apollo Guidance Computer", S. 277.
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM label.
 #[test]
 fn p61_start_sequence_sets_program_61() {
     let mut state = SimState::new();
 
-    // VERB 3 7 ENTER — setzt Verb = 37
+    // V37E — setzt Verb = 37, Flash ein, Noun-Modus aktiv
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
 
-    // NOUN 6 1 ENTER — setzt Noun = 61, löst Dispatcher V37 aus
-    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+    // 6 1 ENTER — Programmnummer direkt eingeben (kein NOUN-Taste)
+    press_keys(&mut state, &[KEY_6, KEY_1, KEY_ENTER]);
 
     // PROG-Anzeige (major_mode) muss 61 sein
     assert_eq!(
@@ -82,17 +90,19 @@ fn p61_start_sequence_sets_program_61() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: P30-Startsequenz — PROG=30 nach V37 N30 ENTER
+// Test 2: P30-Startsequenz — PROG=30 nach V37E30E
 // ---------------------------------------------------------------------------
 
-/// Crew drückt `VERB 3 7 ENTER NOUN 3 0 ENTER`.
+/// Crew drückt `V37E30E`: VERB 3 7 ENTER 3 0 ENTER.
 /// Erwartet: PROG = 30, active_program = 30.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM/MMCHANG.
 #[test]
 fn p30_start_sequence_sets_program_30() {
     let mut state = SimState::new();
 
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
-    press_keys(&mut state, &[KEY_NOUN, KEY_3, KEY_0, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_3, KEY_0, KEY_ENTER]);
 
     assert_eq!(
         state.ctx.display.major_mode.val(),
@@ -103,17 +113,19 @@ fn p30_start_sequence_sets_program_30() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: P40-Startsequenz — PROG=40 nach V37 N40 ENTER
+// Test 3: P40-Startsequenz — PROG=40 nach V37E40E
 // ---------------------------------------------------------------------------
 
-/// Crew drückt `VERB 3 7 ENTER NOUN 4 0 ENTER`.
+/// Crew drückt `V37E40E`: VERB 3 7 ENTER 4 0 ENTER.
 /// Erwartet: PROG = 40, active_program = 40.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM/MMCHANG.
 #[test]
 fn p40_start_sequence_sets_program_40() {
     let mut state = SimState::new();
 
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
-    press_keys(&mut state, &[KEY_NOUN, KEY_4, KEY_0, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_4, KEY_0, KEY_ENTER]);
 
     assert_eq!(state.ctx.display.major_mode.val(), 40);
     assert_eq!(state.ctx.guidance.active_program, Some(40));
@@ -209,17 +221,17 @@ fn v34_terminate_sets_flag() {
 // ---------------------------------------------------------------------------
 
 /// Simuliert einen vereinfachten TEI-Ablauf:
-/// 1. `V37 N30 ENTER` → P30 starten
+/// 1. `V37E30E` → P30 starten
 /// 2. `V06 N81 ENTER` → ΔV-Anzeige (nur Verb+Noun prüfen, kein P30-Zustand)
 /// 3. `V33 ENTER` → Proceed
-/// 4. `V37 N40 ENTER` → P40 starten (SPS-Burn)
+/// 4. `V37E40E` → P40 starten (SPS-Burn)
 #[test]
 fn tei_sequence_p30_then_p40() {
     let mut state = SimState::new();
 
-    // 1. P30 starten
+    // 1. P30 starten (V37E30E — ohne NOUN-Taste)
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
-    press_keys(&mut state, &[KEY_NOUN, KEY_3, KEY_0, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_3, KEY_0, KEY_ENTER]);
     assert_eq!(state.ctx.guidance.active_program, Some(30));
     assert_eq!(state.ctx.display.major_mode.val(), 30);
 
@@ -233,9 +245,9 @@ fn tei_sequence_p30_then_p40() {
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_3, KEY_ENTER]);
     assert!(state.ctx.guidance.proceed_flag);
 
-    // 4. P40 starten (SPS-Burn)
+    // 4. P40 starten (SPS-Burn, V37E40E — ohne NOUN-Taste)
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
-    press_keys(&mut state, &[KEY_NOUN, KEY_4, KEY_0, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_4, KEY_0, KEY_ENTER]);
     assert_eq!(state.ctx.guidance.active_program, Some(40));
     assert_eq!(state.ctx.display.major_mode.val(), 40);
 }
@@ -244,13 +256,15 @@ fn tei_sequence_p30_then_p40() {
 // Test 9: P52-Startsequenz (IMU Alignment)
 // ---------------------------------------------------------------------------
 
-/// `VERB 3 7 ENTER NOUN 5 2 ENTER` → PROG=52, active_program=52.
+/// `V37E52E`: VERB 3 7 ENTER 5 2 ENTER → PROG=52, active_program=52.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM/MMCHANG.
 #[test]
 fn p52_start_sequence_sets_program_52() {
     let mut state = SimState::new();
 
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
-    press_keys(&mut state, &[KEY_NOUN, KEY_5, KEY_2, KEY_ENTER]);
+    press_keys(&mut state, &[KEY_5, KEY_2, KEY_ENTER]);
 
     assert_eq!(state.ctx.display.major_mode.val(), 52);
     assert_eq!(state.ctx.guidance.active_program, Some(52));
@@ -406,24 +420,25 @@ fn v37_first_enter_activates_flash() {
     );
 }
 
-/// Vollständiger zweistufiger V37-Ablauf:
-/// 1. `VERB 3 7 ENTER` → Flash aktiv
-/// 2. `NOUN 6 1 ENTER` → P61 gestartet, Flash gestoppt
+/// Vollständiger zweistufiger V37-Ablauf (V37E61E — ohne NOUN-Taste):
+/// 1. `VERB 3 7 ENTER` → Flash aktiv, Noun-Modus automatisch eingeschaltet
+/// 2. `6 1 ENTER` → P61 gestartet, Flash gestoppt
 ///
+/// Korrekte AGC-Eingabesequenz laut Quelle: "The Apollo Guidance Computer", S. 277.
 /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, REQMM/MMCHANG.
 #[test]
 fn v37_two_step_starts_program_and_stops_flash() {
     let mut state = SimState::new();
 
-    // Schritt 1: V37 ENTER — Flash einschalten
+    // Schritt 1: V37 ENTER — Flash einschalten, Noun-Modus aktiv
     press_keys(&mut state, &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER]);
     assert!(
         state.ctx.display.flash_state,
         "Nach V37 ENTER muss Flash aktiv sein"
     );
 
-    // Schritt 2: NOUN 6 1 ENTER — Programm starten
-    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+    // Schritt 2: 6 1 ENTER — Programmnummer direkt ohne NOUN-Taste
+    press_keys(&mut state, &[KEY_6, KEY_1, KEY_ENTER]);
 
     assert_eq!(
         state.ctx.display.major_mode.val(),

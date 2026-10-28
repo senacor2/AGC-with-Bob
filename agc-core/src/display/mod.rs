@@ -15,6 +15,6 @@ pub mod verb_noun;
 pub use dispatcher::{VerbAction, VerbDispatcher};
 pub use display_iface::{DisplayPriority, DisplayQueue, DisplayRequest};
 pub use verb_noun::{
-    DisplayRegister, DisplayState, InputBuffer, KeyCode, KeyEvent, MajorMode, NounCode,
+    DisplayRegister, DisplayState, InputBuffer, InputMode, KeyCode, KeyEvent, MajorMode, NounCode,
     StatusLights, VerbCode,
 };

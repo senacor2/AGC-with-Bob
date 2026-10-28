@@ -30,9 +30,9 @@ use agc_core::context::{AgcContext, AlignmentCommand};
 use agc_core::display::dispatcher::VerbDispatcher;
 use agc_core::display::noun_resolver;
 use agc_core::display::verb_noun::{
-    process_key, t4rupt_tick, write_to_dsky, InputBuffer, KeyCode as AgcKey, KeyEvent, KEY_0,
-    KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_CLR, KEY_ENTER, KEY_KEY_REL,
-    KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
+    process_key, t4rupt_tick, write_to_dsky, InputBuffer, InputMode, KeyCode as AgcKey, KeyEvent,
+    KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_CLR, KEY_ENTER,
+    KEY_KEY_REL, KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
 };
 use agc_core::hal::DskyHal;
 use agc_physics::math::Vec3;
@@ -196,10 +196,31 @@ pub fn sim_tick(state: &mut SimState) {
                         && matches!(state.ctx.display.noun.val(), 22 | 93);
                     if v_raw == 34 && was_alignment_prompt {
                         agc_core::display::verb_noun::stop_flash(&mut state.ctx.display);
-                    } else if matches!(v_raw, 32..=34 | 37 | 41 | 42) {
+                    } else if matches!(v_raw, 32..=34 | 41 | 42) {
                         let verb = state.ctx.display.verb;
                         let noun = state.ctx.display.noun;
                         VerbDispatcher::dispatch(verb, noun, &mut state.ctx);
+                    } else if v_raw == 37 {
+                        // V37 erster Schritt: immer mit Noun=0 dispatchen (RequestProgram).
+                        // Der alte Noun-Wert im Display darf nicht als Programmnummer
+                        // missinterpretiert werden. REQMM setzt NOUNREG=0 und wartet auf
+                        // die neue Eingabe.
+                        // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, REQMM label.
+                        let verb = state.ctx.display.verb;
+                        #[expect(
+                            clippy::unwrap_used,
+                            reason = "NounCode(0) ist garantiert gültig (0 ≤ 99)"
+                        )]
+                        let noun_zero = agc_core::display::verb_noun::NounCode::new(0).unwrap();
+                        VerbDispatcher::dispatch(verb, noun_zero, &mut state.ctx);
+                    }
+                    // V37: Flash aktiv → Eingabemodus auf Noun setzen, damit die
+                    // Programmnummer direkt als Ziffernfolge eingegeben werden kann
+                    // (ohne NOUN-Taste). Entspricht AGC REQMM, das NOUNREG beschreibt.
+                    // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, REQMM label.
+                    if v_raw == 37 && state.ctx.display.flash_state {
+                        state.input_buf.clear();
+                        state.input_buf.mode = InputMode::Noun;
                     }
                     // Flash verlassen → Eingabe-Sequenz abbrechen, Index zurücksetzen.
                     if !state.ctx.display.flash_state {
