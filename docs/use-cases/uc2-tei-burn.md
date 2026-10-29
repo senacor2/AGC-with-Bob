@@ -171,32 +171,49 @@ N81 zeigt den von P30 in ECI rotierten Δv-Vektor (DELVSIN), berechnet
 
 ---
 
-### Schritt 5: Burn-Monitor einschalten (V16 N40)
+### Schritt 5: P40 starten (SPS-Burn-Programm)
+
+**Eingabe**: `V37E40E`
+
+**Erwartet**:
+| Anzeige | Wert |
+|---------|------|
+| PROG | 40 |
+
+P40 liest den DELVSIN-Betrag aus dem P30-Ergebnis und die Fahrzeugmasse aus
+`guidance.vehicle_mass_kg`. Damit berechnet es in Phase 2 die Brenndauer
+(Tsiolkovsky-Gleichung) und legt `ctx.guidance.p40` an — erst dann hat
+`N40` auflösbare Werte.
+
+> **Voraussetzung**: P30 muss bereits gelaufen sein (Schritt 2).
+> Ohne P30-Ergebnis bleibt `ctx.guidance.p40 = None` und N40 zeigt Blank.
+
+---
+
+### Schritt 6: Burn-Monitor einschalten (V16 N40)
 
 **Eingabe**: `V16N40E`
 
 **Erwartet**:
-- Monitor-Modus aktiv (R1/R2/R3 werden 1× pro Sekunde aktualisiert)
+- Monitor-Modus aktiv — Werte erscheinen **sofort** und werden danach 1× pro Sekunde aktualisiert
 
-| Register | Noun | Inhalt | Einheit |
-|----------|------|--------|---------|
-| R1 | N40 | TTOGO — Restbrennzeit bis Cutoff | MM:SS |
-| R2 | N40 | VGDISP — Ziel-Δv (aus P30 DELVSIN-Betrag) | m/s |
-| R3 | N40 | DVTOTAL — akkumuliertes Δv seit Ignition | m/s |
+| Register | Noun | Inhalt | Wert vor Zündung | Einheit |
+|----------|------|--------|------------------|---------|
+| R1 | N40 | TTOGO — Restbrennzeit bis Cutoff | berechnete Gesamtbrennzeit (≈ MM:SS) | MM:SS |
+| R2 | N40 | VGDISP — Ziel-Δv (aus P30 DELVSIN-Betrag) | ≈ 905 | m/s |
+| R3 | N40 | DVTOTAL — akkumuliertes Δv seit Ignition | 0 | m/s |
 
-> **Hinweis**: R1/R2/R3 bleiben **Blank**, wenn P30 nicht vor P40 ausgeführt
-> wurde — P40 braucht den DELVSIN-Betrag aus P30 für seinen State.
-
-Vor Zündung: TTOGO zeigt die berechnete Gesamtbrennzeit, DVTOTAL = 0.
+> **Hinweis**: R1/R2/R3 bleiben **Blank**, wenn P40 nicht gestartet wurde
+> (Schritt 5 fehlt) oder P30 nicht vor P40 ausgeführt wurde.
 
 ---
 
-### Schritt 6: Burn zum TIG — automatisch
+### Schritt 7: Burn zum TIG — automatisch
 
 P40 startet **automatisch** wenn die Sim-MET den TIG erreicht.
 Die Crew muss **kein V33 PRO** drücken.
 
-P40 durchläuft dann automatisch seine Phasen:
+P40 ist bereits gestartet (Schritt 5) und durchläuft dann automatisch seine Phasen:
 
 | Phase | Bedeutung |
 |-------|-----------|
@@ -224,7 +241,8 @@ Nach Burn-Ende: PROG zeigt weiter 40, TTOGO = 00:00.
 
 | Problem | Ursache | Lösung |
 |---------|---------|--------|
-| R1/R2/R3 Blank nach V16N40E | P30 nicht vor P40 gestartet | Schritt 2 zuerst ausführen |
+| R1/R2/R3 Blank nach V16N40E | P40 noch nicht gestartet (`ctx.guidance.p40 = None`) | Schritt 5: `V37E40E` vor `V16N40E` ausführen |
+| R1/R2/R3 Blank nach V16N40E (P40 bereits aktiv) | P30 wurde nicht vor P40 gestartet | Schritt 2: `V37E30E` zuerst ausführen |
 | N33 zeigt Blank | TIG nicht eingegeben | Schritt 0: V25N33E ausführen |
 | P40 zündet nicht automatisch | TIG liegt in der Vergangenheit oder P30 fehlt | TIG neu eingeben, P30 starten |
 | Alarm 0440 | `delta_v_target ≤ 0` oder `mass_kg ≤ 0` | Szenario `mass_kg` prüfen |
