@@ -27,23 +27,30 @@ use crate::types::Vec3;
 // Orbital-Elemente (Perigee / Apogee)
 // ---------------------------------------------------------------------------
 
-/// Berechnet Perigee- und Apogee-Radius für einen durch r und v definierten Kegel-Abschnitt.
+/// Berechnet Perigee- und Apogee-Höhe für einen durch r und v definierten Kegel-Abschnitt.
 ///
 /// Verwendet die Vis-Viva-Gleichung und den spezifischen Drehimpuls:
 /// ```text
-/// a = 1 / (2/r − v²/μ)      (semi-major axis)
-/// h = |r × v|               (spez. Drehimpuls)
-/// e = √(1 − h²/(μ·a))      (Exzentrizität)
-/// r_per = a·(1 − e)
-/// r_apo = a·(1 + e)
+/// a  = 1 / (2/r − v²/μ)          (semi-major axis; negativ für hyperbolische Bahn)
+/// h  = |r × v|                    (spez. Drehimpuls)
+/// e  = √(1 − h²/(μ·a))           (Exzentrizität; > 1 für hyperbolische Bahn)
+/// r_per = a·(1 − e)               (elliptisch: a>0, e<1 → r_per > 0)
+///                                  (hyperbolisch: via h²/(μ·(1+e)))
+/// r_apo = a·(1 + e)               (nur für elliptische Bahn definiert)
 /// ```
 ///
-/// # Rückgabe
-/// `Some((h_per, h_apo))` — Perigee- und Apogee-*Höhe* über dem Äquatorialradius
-/// in m.  Gibt `None` zurück bei unphysikalischem Zustandsvektor (r = 0 oder
-/// hyperbolischer Orbit → Apogee negativ).
+/// Bei einer **hyperbolischen oder parabolischen Bahn** (`inv_a ≤ 0`, d. h. Fluchtbahn,
+/// typisch nach einem TEI-Burn) gibt es kein Apogee um den Zentralkörper.
+/// Analog zur AGC-`INFINAPO`-Behandlung in `APSIDES` (`CONIC_SUBROUTINES.agc`,
+/// Zeilen 1752–1759) wird in diesem Fall `h_apo = f64::MAX` zurückgegeben,
+/// nicht `None`. Das Perigee wird dennoch korrekt berechnet.
 ///
-/// AGC source: `Comanche055/P30,P37.agc`, S30.1-Subroutine (PERIAPO1-Aufruf).
+/// # Rückgabe
+/// `Some((h_per, h_apo))` — Perigee- und Apogee-*Höhe* über dem Äquatorialradius in m.
+/// Gibt `None` zurück nur bei wirklich unphysikalischem Zustandsvektor (r = 0).
+///
+/// AGC source: `Comanche055/P30,P37.agc`, S30.1-Subroutine (PERIAPO1-Aufruf);
+/// `Comanche055/CONIC_SUBROUTINES.agc`, APSIDES / INFINAPO.
 fn perigee_apogee(r: Vec3, v: Vec3, body: &CentralBody) -> Option<(f64, f64)> {
     let mu = body.mu();
     let r_eq = body.r_equatorial();
@@ -53,32 +60,45 @@ fn perigee_apogee(r: Vec3, v: Vec3, body: &CentralBody) -> Option<(f64, f64)> {
         return None;
     }
 
+    // Spezifischer Drehimpuls (gilt für alle Kegelschnitte)
+    let h_vec = r.cross(v);
+    let h_sq = h_vec.dot(h_vec);
+
     let v_sq = v.dot(v);
     // vis-viva: 1/a = 2/r - v²/μ
     let inv_a = 2.0 / r_mag - v_sq / mu;
 
-    // Nur gebundene Orbits (elliptisch): inv_a > 0
-    if inv_a <= 0.0 {
-        return None;
+    if inv_a > 0.0 {
+        // --- Elliptische Bahn (gebunden) ---
+        let a = 1.0 / inv_a;
+
+        // Exzentrizität: e² = 1 - h²/(μ·a)
+        let e_sq = 1.0 - h_sq / (mu * a);
+        let e = if e_sq < 0.0 { 0.0 } else { libm::sqrt(e_sq) };
+
+        let r_per = a * (1.0 - e);
+        let r_apo = a * (1.0 + e);
+
+        Some((r_per - r_eq, r_apo - r_eq))
+    } else {
+        // --- Hyperbolische / parabolische Bahn (Fluchtbahn, z. B. nach TEI-Burn) ---
+        //
+        // Kein Apogee um den Zentralkörper — analog AGC INFINAPO: h_apo = +∞.
+        // AGC source: `Comanche055/CONIC_SUBROUTINES.agc`, APSIDES / INFINAPO (Zeilen 1752–1759).
+        //
+        // Periapsis-Radius via Drehimpuls (gilt auch für e > 1):
+        //   e = √(1 + h²·|inv_a|/μ)   (da a < 0 für hyperbolisch)
+        //   r_per = h² / (μ · (1 + e))
+        let e = libm::sqrt(1.0 + h_sq * (-inv_a) / mu);
+        let r_per = if e > 0.0 {
+            h_sq / (mu * (1.0 + e))
+        } else {
+            // Parabolischer Grenzfall: r_per aus r und v direkt
+            r_mag
+        };
+
+        Some((r_per - r_eq, f64::MAX))
     }
-    let a = 1.0 / inv_a;
-
-    // Spezifischer Drehimpuls
-    let h_vec = r.cross(v);
-    let h_sq = h_vec.dot(h_vec);
-
-    // Exzentrizität: e² = 1 - h²/(μ·a)
-    let e_sq = 1.0 - h_sq / (mu * a);
-    let e = if e_sq < 0.0 { 0.0 } else { libm::sqrt(e_sq) };
-
-    let r_per = a * (1.0 - e);
-    let r_apo = a * (1.0 + e);
-
-    // Höhe über Äquatorialradius
-    let h_per = r_per - r_eq;
-    let h_apo = r_apo - r_eq;
-
-    Some((h_per, h_apo))
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +377,7 @@ pub fn p37_compute(input: &P37Input, alarm: &mut AlarmState) -> Option<P37Output
 
 #[cfg(test)]
 mod tests {
-    use super::{p30_compute, p37_compute, P30Input, P37Input};
+    use super::{p30_compute, p37_compute, perigee_apogee, P30Input, P37Input};
     use crate::alarm::AlarmState;
     use crate::navigation::orbital::CentralBody;
     use crate::navigation::state_vector::StateVector;
@@ -498,7 +518,79 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 5: P37 ungültige Transferzeit → None + Alarm
+    // Test 5a: P30 TEI-Burn Mondorbit — hyperbolische Bahn → kein Alarm, h_apo = MAX
+    //
+    // Apollo-11-TEI: +905 m/s along-track im Mondorbit 110 km.
+    // Mondfluchtgeschwindigkeit ≈ 2306 m/s, Kreisbahngeschwindigkeit ≈ 1630 m/s.
+    // Nach dem Burn v ≈ 2535 m/s > v_escape → hyperbolische Bahn.
+    // Der echte AGC setzt HAPO = INFINAPO (kein Alarm).
+    // -----------------------------------------------------------------------
+    #[test]
+    fn p30_tei_burn_hyperbolic_no_alarm() {
+        const MU_MOON: f64 = 4.904_869_5e12;
+        const R_MOON: f64 = 1_737_400.0;
+        let r = R_MOON + 110_000.0; // 1 847 400 m
+        let v_circ = libm::sqrt(MU_MOON / r); // ≈ 1630 m/s
+
+        let sv = StateVector::new(
+            Vec3::new(r, 0.0, 0.0),
+            Vec3::new(0.0, v_circ, 0.0),
+            Met::from_seconds(0.0),
+        );
+        let input = P30Input {
+            sv_tig: sv,
+            delta_v_lv: Vec3::new(0.0, 905.0, 0.0), // Apollo-11-TEI along-track
+            body: CentralBody::Moon,
+        };
+        let mut alarm = AlarmState::new();
+        let result = p30_compute(&input, &mut alarm);
+
+        assert!(result.is_some(), "P30 TEI-Burn darf keinen None liefern");
+        assert!(
+            alarm.last().is_none(),
+            "P30 TEI-Burn darf keinen Alarm auslösen"
+        );
+
+        let out = result.unwrap();
+        assert_eq!(
+            out.h_apo,
+            f64::MAX,
+            "h_apo soll f64::MAX sein (hyperbolische Bahn, kein Mondapogee)"
+        );
+        // Perigee soll physikalisch korrekt berechnet werden (< 0 = unterhalb Mondoberfläche,
+        // aber zumindest endlich und kein Absturz)
+        assert!(
+            out.h_per.is_finite(),
+            "h_per soll endlich sein: {}",
+            out.h_per
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 5b: perigee_apogee hyperbolische Bahn — Periapsis korrekt, kein None
+    // -----------------------------------------------------------------------
+    #[test]
+    fn perigee_apogee_hyperbolic_returns_some() {
+        const MU_MOON: f64 = 4.904_869_5e12;
+        const R_MOON: f64 = 1_737_400.0;
+        let r = R_MOON + 110_000.0;
+        let v_escape = libm::sqrt(2.0 * MU_MOON / r); // Mondfluchtgeschwindigkeit
+
+        let body = CentralBody::Moon;
+        // v > v_escape → hyperbolisch
+        let result = perigee_apogee(
+            Vec3::new(r, 0.0, 0.0),
+            Vec3::new(0.0, v_escape * 1.1, 0.0),
+            &body,
+        );
+        assert!(result.is_some(), "Hyperbolische Bahn soll Some ergeben");
+        let (h_per, h_apo) = result.unwrap();
+        assert_eq!(h_apo, f64::MAX, "h_apo soll MAX sein (kein Mondapogee)");
+        assert!(h_per.is_finite(), "h_per soll endlich sein: {h_per}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 6: P37 ungültige Transferzeit → None + Alarm
     // -----------------------------------------------------------------------
     #[test]
     fn p37_negative_tof_alarm() {

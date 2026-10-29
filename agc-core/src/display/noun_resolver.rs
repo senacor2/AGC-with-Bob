@@ -67,7 +67,10 @@ fn mps_to_display(mps: f64) -> i32 {
 /// AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, SF-Konstante für Distanz.
 #[inline]
 fn m_to_km_display(m: f64) -> i32 {
-    libm::round(m / 1000.0) as i32
+    // Clamp auf i32-Bereich vor dem Cast; f64::MAX würde andernfalls zu i32-Überlauf führen.
+    // Entspricht AGC MAXCHK: Apogee-Anzeige auf max. 9 999 999 km (= ~9999 NM) begrenzt.
+    const MAX_KM: f64 = 9_999_999.0;
+    libm::round((m / 1000.0).clamp(-MAX_KM, MAX_KM)) as i32
 }
 
 /// Wandelt g₀-Vielfache in 0.01 m/s² um.

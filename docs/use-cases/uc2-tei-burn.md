@@ -29,16 +29,17 @@ und wählt den Mond als Zentralkörper für den Physik-Integrator.
 
 ## Checkliste
 
-> **Alarm 1400 — Ursache und Abhilfe**
+> **Alarm 1400 — Ursache (behoben)**
 >
-> P30 liest den internen Zustandsvektor (`current_sv`), der erst nach dem ersten
-> `sim_tick()` befüllt wird. Wird P30 aufgerufen **bevor der Simulator mindestens
-> einen Tick gelaufen ist**, enthält `current_sv.position = (0, 0, 0)`.
-> `lv_to_eci` kann den Nullvektor nicht normalisieren und wirft Alarm `0x0300`
-> (TUI-Anzeige: `P1400` — „P30-Fehler: Zustandsvektor ungültig").
+> Der Alarm `P1400` (`0x0300`) trat auf, weil `perigee_apogee` eine
+> **hyperbolische Post-Burn-Bahn** fälschlicherweise als Fehler behandelte.
+> Ein TEI-Burn von +905 m/s along-track übersteigt die Mondfluchtgeschwindigkeit
+> (~2 306 m/s), die resultierende Bahn ist hyperbolisch (kein Mondapogee).
+> Der echte AGC behandelt diesen Fall mit `INFINAPO` (Apogee = +∞, kein Alarm).
+> Die Rust-Implementierung folgt nun diesem Verhalten: bei hyperbolischer Bahn
+> wird `h_apo = f64::MAX` gesetzt; die TUI zeigt den Maximalwert an.
 >
-> **Abhilfe**: Simulator starten und das Szenario vollständig laden lassen (die
-> TUI zeigt Positionswerte an), bevor die erste DSKY-Eingabe erfolgt.
+> **Dieser Fehler ist behoben** und tritt nicht mehr auf.
 
 ### Schritt 0: Δv-Manövervektor eingeben (V25 N81)
 
