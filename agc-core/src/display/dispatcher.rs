@@ -185,9 +185,9 @@ const GUIDANCE_PRIORITY: u8 = 10;
 
 /// P30 — External ΔV Targeting.
 ///
-/// Berechnet Apogee, Perigee und Δv-ECI (DELVSIN) aus dem aktuellen
-/// Bahnzustandsvektor und dem zuvor per V25/N81 eingegebenen `delta_v_lv`.
-/// Schreibt das Ergebnis in `ctx.guidance.p30`.
+/// Berechnet Apogee, Perigee und Δv-ECI (DELVSIN).
+/// Wenn `guidance.tig_s > 0` und in der Zukunft liegt, propagiert P30 den
+/// aktuellen SV per Kepler-Schritt bis zum TIG und rechnet dort.
 ///
 /// Zentralkörper wird aus dem Betrag des aktuellen Positionsvektors abgeleitet:
 /// `|r| < 3 000 000 m` → Mond, sonst Erde.
@@ -206,7 +206,8 @@ fn program_p30(ctx: &mut AgcContext) {
 
     let dv = ctx.guidance.delta_v_lv;
     let input = P30Input {
-        sv_tig: ctx.current_sv,
+        sv_now: ctx.current_sv,
+        tig_s: ctx.guidance.tig_s,
         delta_v_lv: Vec3::new(dv[0], dv[1], dv[2]),
         body,
     };
@@ -559,6 +560,18 @@ impl VerbDispatcher {
                 ctx.guidance.splashdown_lat = r1 as f64 * CENTIDEG_TO_RAD;
                 ctx.guidance.splashdown_lon = r2 as f64 * CENTIDEG_TO_RAD;
                 ctx.guidance.heads_up = r3 >= 0;
+                stop_flash(&mut ctx.display);
+            }
+
+            // N33: TIG — Zündzeitpunkt (HH:MM:SS)
+            // R1 = Stunden, R2 = Minuten, R3 = Sekunden (ganzzahlig, ohne Vorzeichen)
+            // Wird in Sekunden (MET) umgerechnet und in guidance.tig_s gespeichert.
+            // AGC source: PINBALL_NOUN_TABLES.agc, N33 (TIG / HH:MM:SS.SS).
+            33 => {
+                let h = r1.max(0) as f64;
+                let m = r2.max(0) as f64;
+                let s = r3.max(0) as f64;
+                ctx.guidance.tig_s = h * 3600.0 + m * 60.0 + s;
                 stop_flash(&mut ctx.display);
             }
 

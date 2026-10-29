@@ -11,12 +11,15 @@
 Der Trans-Earth-Injection-Burn (TEI) befeuert das SPS-Triebwerk, um das
 Apollo-Raumschiff aus dem Mondorbit auf eine Erdrückkehrbahn zu bringen.
 
-- **P30** berechnet den Burn-Plan (Δv, Apogee/Perigee nach Manöver).
-- **P40** führt den Burn aus (Zündsequenz, Brenndauer, Δv-Monitor).
+- **P30** berechnet den Burn-Plan (Δv, Apogee/Perigee nach Manöver).  
+  Wenn ein TIG gesetzt ist, propagiert P30 den aktuellen SV per Kepler-Schritt
+  bis zum TIG und rechnet dort — das Manöver wird also für den richtigen Punkt
+  auf der Bahn berechnet.
+- **P40** führt den Burn aus. Startet automatisch zum TIG (kein V33 PRO nötig),
+  sobald die Sim-MET den TIG erreicht.
 
 Das Szenario startet **15 Minuten vor TIG** (MET 486 522 s = TIG − 900 s),
-damit die Crew ausreichend Zeit hat, alle Eingaben vorzunehmen und die
-Burn-Parameter zu prüfen, bevor das Triebwerk zündet.
+damit die Crew Zeit hat, alle Eingaben vorzunehmen.
 
 ---
 
@@ -55,19 +58,43 @@ und wählt den Mond als Zentralkörper für den Physik-Integrator.
 
 ---
 
-### Schritt 0: TIG kennen — Houston gibt den Zündzeitpunkt durch
+### Schritt 0: TIG von Houston annehmen und per V25 N33 eingeben
 
-Im echten Apollo-Flug übermittelt MCC-Houston den vorausberechneten
-Zündzeitpunkt (TIG) per Funk, bevor die Crew mit der Burn-Vorbereitung beginnt.
+MCC-Houston übermittelt den Zündzeitpunkt (TIG) per Funk an die Crew.
 
 > **Apollo-11-Referenz (Mission Report, Kap. 4.1.3)**  
-> TIG-TEI = GET 135:23:42.4 = MET **487 422 s**
+> TIG-TEI = GET 135:23:42.4  →  R1 = **135**, R2 = **23**, R3 = **42**
 
-Das Szenario startet bei MET 486 522 s, d. h. **15 Minuten vor TIG**.
-Die Crew hat also bis MET 487 422 s Zeit, die Schritte 1–4 abzuarbeiten
-und P40 zum TIG mit V33 (PRO) auszulösen.
+**Eingabe**: `V25N33E` → Flash erscheint, dann drei Werte einzeln bestätigen
 
-Kein DSKY-Input in diesem Schritt — nur Situationsbewusstsein.
+```
+V25 N33 ENTER
++ 1 3 5 ENTER    ← R1 = 135 (Stunden)
++ 2 3 ENTER      ← R2 = 23  (Minuten)
++ 4 2 ENTER      ← R3 = 42  (Sekunden)
+```
+
+Nach der Eingabe:
+- Flash erlischt
+- `ctx.guidance.tig_s = 487 422 s`
+- P30 wird den SV später bis zu diesem Zeitpunkt propagieren
+- P40 zündet **automatisch** wenn die Sim-MET den TIG erreicht
+
+**TIG prüfen** (optional): `V06N33E`
+
+| Register | Wert | Bedeutung |
+|----------|------|-----------|
+| R1 | 135 | Stunden |
+| R2 | 23 | Minuten |
+| R3 | 42 | Sekunden |
+
+**Countdown bis TIG beobachten** (optional): `V16N35E`
+
+| Register | Wert | Bedeutung |
+|----------|------|-----------|
+| R1 | MM:SS | Verbleibende Zeit bis TIG |
+| R2 | — | Blank |
+| R3 | — | Blank |
 
 ---
 
@@ -78,46 +105,48 @@ Vor P30 muss die Crew den gewünschten Δv-Impuls im lokalen Vertikalsystem
 
 Für den Apollo-11-TEI-Burn: ≈ 905 m/s along-track (R2), radial und normal ≈ 0.
 
-**Eingabe**: `V25N81E` dann die drei Werte einzeln bestätigen
-= VERB → 2 → 5 → NOUN → 8 → 1 → ENTER
+**Eingabe**: `V25N81E` dann die drei Werte einzeln bestätigen:
 
-Danach erscheint das Blinken (VERB/NOUN-Flash). Die drei Werte werden
-nacheinander als Ziffernfolge + ENTER übernommen:
+```
+V25 N81 ENTER
++ 0 ENTER        ← R1 = 0   (radial)
++ 9 0 5 ENTER    ← R2 = 905 (along-track)
++ 0 ENTER        ← R3 = 0   (normal)
+```
 
-| Register | Wert (Beispiel Apollo 11 TEI) | Einheit |
-|----------|-------------------------------|---------|
-| R1 | `0` (radial) | m/s |
-| R2 | `905` (along-track) | m/s |
-| R3 | `0` (normal) | m/s |
+| Register | Wert (Apollo 11 TEI) | Einheit |
+|----------|----------------------|---------|
+| R1 | `0` | m/s |
+| R2 | `905` | m/s |
+| R3 | `0` | m/s |
 
 ---
 
 ### Schritt 2: P30 starten (External ΔV Targeting)
 
 **Eingabe**: `V37E30E`
-= VERB → 3 → 7 → ENTER → 3 → 0 → ENTER
 
 **Erwartet**:
 | Anzeige | Wert |
 |---------|------|
 | PROG | 30 |
 
-P30 liest den in Schritt 1 eingegebenen Δv-Vektor und berechnet sofort
-Apogee/Perigee der Post-Burn-Bahn sowie den in ECI rotierten Δv-Vektor.
+P30 liest den TIG aus `guidance.tig_s`, propagiert den aktuellen SV per
+Kepler-Schritt bis dorthin und berechnet dann den Burn-Plan (DELVSIN,
+HAPO, HPER) für den richtigen Bahnpunkt.
 
 ---
 
 ### Schritt 3: Burn-Plan prüfen (N44: HAPO/HPER/TFF)
 
 **Eingabe**: `V06N44E`
-= VERB → 0 → 6 → NOUN → 4 → 4 → ENTER
 
 **Erwartet**:
 | Register | Noun | Wert (Beispiel) | Einheit |
 |----------|------|-----------------|---------|
 | R1 | N44 | HAPO ≈ 400 000 (Erdrückkehrbahn-Apogee) | km |
 | R2 | N44 | HPER ≈ −5 300 (unter Erdradius = Eintritt) | km |
-| R3 | N44 | TFF = 0 (noch nicht berechnet) | s |
+| R3 | N44 | TFF = 0 (noch nicht berechnet) | MM:SS |
 
 Alle Register nicht Blank → P30 hat Burn-Plan berechnet.
 
@@ -129,9 +158,9 @@ Alle Register nicht Blank → P30 hat Burn-Plan berechnet.
 > Ohne Δv-Eingabe zeigen alle Register `0`.
 
 **Eingabe**: `V06N81E`
-= VERB → 0 → 6 → NOUN → 8 → 1 → ENTER
 
-N81 zeigt den von P30 in ECI rotierten Δv-Vektor (DELVSIN).
+N81 zeigt den von P30 in ECI rotierten Δv-Vektor (DELVSIN), berechnet
+**am TIG-SV** (nach Kepler-Propagation).
 
 **Erwartet** (nach Schritt 1 mit `[0, 905, 0]` m/s LV):
 | Register | Bedeutung | Wert (Beispiel) | Einheit |
@@ -142,27 +171,9 @@ N81 zeigt den von P30 in ECI rotierten Δv-Vektor (DELVSIN).
 
 ---
 
-### Schritt 5: P40 starten (SPS-Burn)
-
-> **Voraussetzung**: Schritt 2 (P30) muss zuvor ausgeführt worden sein.
-> P40 liest den von P30 berechneten `DELVSIN`-Betrag als Ziel-Δv und die
-> Fahrzeugmasse aus dem Szenario (`mass_kg = 28802`) für die Tsiolkovsky-Gleichung.
-> Ohne vorheriges P30 bleibt `ctx.guidance.p40 == None` → N40 zeigt Blank.
-
-**Eingabe**: `V37E40E`
-= VERB → 3 → 7 → ENTER → 4 → 0 → ENTER
-
-**Erwartet**:
-| Anzeige | Wert |
-|---------|------|
-| PROG | 40 |
-
----
-
-### Schritt 6: Burn-Monitor einschalten (V16 N40)
+### Schritt 5: Burn-Monitor einschalten (V16 N40)
 
 **Eingabe**: `V16N40E`
-= VERB → 1 → 6 → NOUN → 4 → 0 → ENTER
 
 **Erwartet**:
 - Monitor-Modus aktiv (R1/R2/R3 werden 1× pro Sekunde aktualisiert)
@@ -173,13 +184,17 @@ N81 zeigt den von P30 in ECI rotierten Δv-Vektor (DELVSIN).
 | R2 | N40 | VGDISP — Ziel-Δv (aus P30 DELVSIN-Betrag) | m/s |
 | R3 | N40 | DVTOTAL — akkumuliertes Δv seit Ignition | m/s |
 
+> **Hinweis**: R1/R2/R3 bleiben **Blank**, wenn P30 nicht vor P40 ausgeführt
+> wurde — P40 braucht den DELVSIN-Betrag aus P30 für seinen State.
+
 Vor Zündung: TTOGO zeigt die berechnete Gesamtbrennzeit, DVTOTAL = 0.
 
 ---
 
-### Schritt 7: Burn zum TIG auslösen (V33 PRO)
+### Schritt 6: Burn zum TIG — automatisch
 
-Wenn die MET den TIG erreicht (MET 487 422 s), drückt die Crew **PRO** (V33).
+P40 startet **automatisch** wenn die Sim-MET den TIG erreicht.
+Die Crew muss **kein V33 PRO** drücken.
 
 P40 durchläuft dann automatisch seine Phasen:
 
@@ -196,9 +211,9 @@ Nach Burn-Ende: PROG zeigt weiter 40, TTOGO = 00:00.
 
 ## Hinweise
 
-- Der TEI-Burn dauert typisch ~2 min 30 s (Apollo 11: 151 s bei 905 m/s / 28 802 kg CSM).
-- HAPO nach TEI = `2147483647 km` (i32-Max): das ist korrekt — die Bahn ist
-  hyperbolisch (Fluchtbahn), entspricht AGC `INFINAPO`. Kein Fehler.
+- Der TEI-Burn dauert typisch ~2 min 30 s (Apollo 11: 151 s bei 905 m/s / 28 802 kg).
+- HAPO nach TEI = `2147483647 km` (i32-Max): korrekt — die Bahn ist
+  hyperbolisch (Fluchtbahn), entspricht AGC `INFINAPO`.
 - Der Simulator akkumuliert DVTOTAL noch nicht aus der IMU-Integration —
   das Feld wächst erst, wenn `p40_step()` mit `dt > 0` aufgerufen wird
   (Sub-Task 7: Guidance-Job-Verdrahtung).
@@ -209,11 +224,12 @@ Nach Burn-Ende: PROG zeigt weiter 40, TTOGO = 00:00.
 
 | Problem | Ursache | Lösung |
 |---------|---------|--------|
-| R1/R2/R3 bleiben Blank nach V16N40E | P30 wurde nicht vor P40 gestartet | Schritt 2 zuerst ausführen |
-| R1/R2/R3 bleiben Blank nach korrekter Reihenfolge | Bug in `program_p40()` (behoben) | Simulator neu bauen |
-| Alarm 0440 | `delta_v_target ≤ 0` oder `mass_kg ≤ 0` | Szenario prüfen: `mass_kg` muss gesetzt sein |
-| Alarm 0300 | Ungültiger Zustandsvektor beim P30-Start | Szenario prüfen: `pos_*`-Felder |
-| HAPO = 2147483647 km | TEI-Burn → hyperbolische Bahn (INFINAPO) | Kein Fehler — erwartet nach TEI |
+| R1/R2/R3 Blank nach V16N40E | P30 nicht vor P40 gestartet | Schritt 2 zuerst ausführen |
+| N33 zeigt Blank | TIG nicht eingegeben | Schritt 0: V25N33E ausführen |
+| P40 zündet nicht automatisch | TIG liegt in der Vergangenheit oder P30 fehlt | TIG neu eingeben, P30 starten |
+| Alarm 0440 | `delta_v_target ≤ 0` oder `mass_kg ≤ 0` | Szenario `mass_kg` prüfen |
+| Alarm 0300 | Ungültiger SV beim P30-Start | Szenario `pos_*`-Felder prüfen |
+| HAPO = 2147483647 km | TEI → hyperbolische Bahn (INFINAPO) | Kein Fehler — erwartet |
 
 ---
 
@@ -221,7 +237,7 @@ Nach Burn-Ende: PROG zeigt weiter 40, TTOGO = 00:00.
 
 - `Comanche055/P30,P37.agc`, P30-Routine (External ΔV Targeting)
 - `Comanche055/P40-P47.agc`, P40-Routine (SPS-Burn)
-- `Comanche055/PINBALL_NOUN_TABLES.agc`, N40, N44, N81
+- `Comanche055/PINBALL_NOUN_TABLES.agc`, N33, N35, N40, N44, N81
 - *Apollo 11 Mission Report* (MSC-00171), Kap. 4.1.3 (TEI-TIG, Burn-Parameter)
 - *The Apollo Guidance Computer*, Kap. 5 „External ΔV Targeting"
 - Vallado, *Fundamentals of Astrodynamics*, §5.4

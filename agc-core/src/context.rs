@@ -93,7 +93,7 @@ pub struct GuidanceContext {
     pub heads_up: bool,
 
     // -----------------------------------------------------------------------
-    // Fahrzeugparameter
+    // Fahrzeugparameter + Burn-Planung
     // -----------------------------------------------------------------------
     /// Fahrzeugmasse vor dem nächsten Burn [kg].
     ///
@@ -103,6 +103,19 @@ pub struct GuidanceContext {
     ///
     /// AGC-Quelle: `Comanche055/P40-P47.agc`, FENG / EMDOT (pad-geladene Masse).
     pub vehicle_mass_kg: f64,
+
+    /// Vorausberechneter Zündzeitpunkt TIG [s] — Mission Elapsed Time.
+    ///
+    /// Wird von der Crew per `V25 N33` eingegeben oder aus dem Szenario geladen
+    /// (`tig_s`-Feld). P30 propagiert den aktuellen Bahnzustandsvektor von der
+    /// aktuellen MET bis zum TIG (Kepler-Schritt), bevor der Burn-Plan berechnet
+    /// wird. P40 zündet automatisch wenn `ctx.current_sv.met >= tig_s`.
+    ///
+    /// `0.0` bedeutet: kein TIG gesetzt — P30 benutzt den aktuellen SV direkt
+    /// (Verhalten wie bisher).
+    ///
+    /// AGC-Quelle: `Comanche055/PINBALL_NOUN_TABLES.agc`, N33 (TIG).
+    pub tig_s: f64,
 
     // -----------------------------------------------------------------------
     // P30-Eingabedaten (Crew via V25/N81)
@@ -191,6 +204,7 @@ impl Default for GuidanceContext {
             splashdown_lon: 0.0,
             heads_up: false,
             vehicle_mass_kg: 28_800.0,
+            tig_s: 0.0,
             delta_v_lv: [0.0; 3],
             p30: None,
             p37_em: None,

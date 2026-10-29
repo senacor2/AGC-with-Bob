@@ -556,6 +556,32 @@ pub fn sim_tick(state: &mut SimState) {
         }
     }
 
+    // --- TIG-Trigger: P40 automatisch zum Zündzeitpunkt starten ---
+    //
+    // Wenn TIG gesetzt (tig_s > 0), P40 noch NICHT läuft (guidance.p40 == None),
+    // P30 einen gültigen Burn-Plan hat (guidance.p30 == Some) und die aktuelle MET
+    // den TIG erreicht hat → P40 starten wie V37E40E.
+    //
+    // Das entspricht dem echten AGC-Verhalten: P40 wartet intern auf den TIG
+    // und löst die Zündsequenz aus, ohne weiteren Crew-Input.
+    //
+    // AGC source: Comanche055/P40-P47.agc, IGNITION / TIG-Vergleich in BURN-Schleife.
+    {
+        let tig = state.ctx.guidance.tig_s;
+        let now = state.ctx.current_sv.time.as_seconds();
+        let p40_inactive = state.ctx.guidance.p40.is_none()
+            || state.ctx.guidance.p40.is_some_and(|p| p.phase == 0);
+        let p30_ready = state.ctx.guidance.p30.is_some();
+        if tig > 0.0 && now >= tig && p40_inactive && p30_ready {
+            #[expect(clippy::unwrap_used, reason = "40 und 0 sind garantiert gültige Codes")]
+            VerbDispatcher::dispatch(
+                agc_core::display::verb_noun::VerbCode::new(37).unwrap(),
+                agc_core::display::verb_noun::NounCode::new(40).unwrap(),
+                &mut state.ctx,
+            );
+        }
+    }
+
     // --- Physik: RK4 ---
     // Zentralkörper aus state.step_body (wird beim Laden eines Szenarios gesetzt).
     let params = StepParams {

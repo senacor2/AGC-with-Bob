@@ -135,6 +135,13 @@ pub enum DisplayRegister {
     ///
     /// AGC-Format: `XXBXX` (Minuten zweistellig, Leerzeichen, Sekunden zweistellig).
     MinSec(u32),
+    /// Zeit im Format HH:MM:SS.
+    ///
+    /// Wert ist Gesamtzeit in Sekunden. Wird für N33 (TIG) und N36 (AGC-Uhrzeit)
+    /// verwendet — AGC Skala-Typ K.
+    ///
+    /// AGC-Format: `HH MM SS` (Stunden, Minuten, Sekunden je zweistellig).
+    HourMinSec(u32),
 }
 
 // ---------------------------------------------------------------------------

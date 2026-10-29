@@ -204,6 +204,50 @@ pub fn format_min_sec(total_s: u32) -> (String, String, String) {
     (top, mid, bot)
 }
 
+/// Formatiert eine Zeitangabe in Sekunden als HH:MM:SS-Segment-Display.
+///
+/// Für AGC Skala-Typ K (N33 TIG, N36 AGC-Uhrzeit).
+/// Die Vorzeichen-Stelle zeigt `HH` (Stunden), gefolgt von `MM` und `SS`.
+/// Da das DSKY-Register nur 5 Stellen bietet, werden nur MM:SS dargestellt,
+/// und die Stunden als Vorzeichen-Stelle (2 Zeichen) angedeutet.
+///
+/// In der TUI-Darstellung: `HH MM SS` über drei Zeilen.
+///
+/// Gibt `(top_line, mid_line, bot_line)` zurück.
+pub fn format_hour_min_sec(total_s: u32) -> (String, String, String) {
+    let hours = total_s / 3600;
+    let mins = (total_s % 3600) / 60;
+    let secs = total_s % 60;
+
+    // Stunden als "Vorzeichen-Block" (2 Ziffern links)
+    let h0 = render_digit(((hours / 10) % 10) as u8);
+    let h1 = render_digit((hours % 10) as u8);
+    // Minuten und Sekunden als 4 Ziffern rechts, mit Blank-Separator in der Mitte
+    let sep = render_blank();
+    let segs = [
+        render_digit((mins / 10) as u8),
+        render_digit((mins % 10) as u8),
+        sep,
+        render_digit((secs / 10) as u8),
+        render_digit((secs % 10) as u8),
+    ];
+
+    // Stunden-Block (2-stellig) + 4 Segment-Zeichen — insgesamt 6 Spalten wie format_decimal
+    let top = format!(
+        "{} {} {} {} {} {}",
+        h0.top, h1.top, segs[0].top, segs[1].top, segs[3].top, segs[4].top
+    );
+    let mid = format!(
+        "{} {} {} {} {} {}",
+        h0.mid, h1.mid, segs[0].mid, segs[1].mid, segs[3].mid, segs[4].mid
+    );
+    let bot = format!(
+        "{} {} {} {} {} {}",
+        h0.bot, h1.bot, segs[0].bot, segs[1].bot, segs[3].bot, segs[4].bot
+    );
+    (top, mid, bot)
+}
+
 #[cfg(test)]
 mod tests {
     use super::format_min_sec;

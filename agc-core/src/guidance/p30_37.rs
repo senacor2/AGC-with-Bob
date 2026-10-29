@@ -21,7 +21,7 @@ use crate::alarm::{raise, AlarmState};
 use crate::navigation::conic::{kepler_step, lambert};
 use crate::navigation::orbital::CentralBody;
 use crate::navigation::state_vector::StateVector;
-use crate::types::Vec3;
+use crate::types::{Met, Vec3};
 
 // ---------------------------------------------------------------------------
 // Orbital-Elemente (Perigee / Apogee)
@@ -144,17 +144,25 @@ fn lv_to_eci(r: Vec3, v: Vec3, dv_lv: Vec3) -> Option<Vec3> {
 /// Eingabedaten für P30 (External ΔV Targeting).
 ///
 /// # Einheiten
-/// | Feld        | Einheit | Bedeutung                                           |
-/// |-------------|---------|-----------------------------------------------------|
-/// | `sv_tig`    | m / m/s | Zustandsvektor des Fahrzeugs zum Zündzeitpunkt TIG |
-/// | `delta_v_lv`| m/s     | Δv im lokalen Vertikalsystem (radial, along, normal)|
-/// | `body`      | —       | Zentralkörper (Erde oder Mond)                      |
+/// | Feld         | Einheit | Bedeutung                                             |
+/// |--------------|---------|-------------------------------------------------------|
+/// | `sv_now`     | m / m/s | Aktueller Bahnzustandsvektor (zum Zeitpunkt des Aufrufs) |
+/// | `tig_s`      | s       | Zündzeitpunkt MET; `0.0` = kein TIG gesetzt           |
+/// | `delta_v_lv` | m/s     | Δv im lokalen Vertikalsystem (radial, along, normal)  |
+/// | `body`       | —       | Zentralkörper (Erde oder Mond)                        |
 ///
 /// AGC source: `Comanche055/P30,P37.agc`, P30-Routine.
 #[derive(Copy, Clone, Debug)]
 pub struct P30Input {
-    /// Zustandsvektor des Fahrzeugs zum Zündzeitpunkt TIG (ECI J2000, m / m/s).
-    pub sv_tig: StateVector,
+    /// Aktueller Bahnzustandsvektor (ECI J2000, m / m/s).
+    ///
+    /// P30 propagiert diesen per Kepler-Schritt bis zum TIG, sofern
+    /// `tig_s > sv_now.met` (d. h. TIG liegt in der Zukunft).
+    pub sv_now: StateVector,
+    /// Vorausberechneter Zündzeitpunkt [s, MET].
+    ///
+    /// `0.0` bedeutet kein TIG gesetzt — P30 benutzt `sv_now` direkt als TIG-SV.
+    pub tig_s: f64,
     /// Δv-Impuls im lokalen Vertikalsystem: `[radial, along-track, normal]` [m/s].
     pub delta_v_lv: Vec3,
     /// Zentralkörper für Orbit-Berechnung.
@@ -189,12 +197,13 @@ pub struct P30Output {
 
 /// Berechnet External-ΔV-Targeting-Parameter (P30).
 ///
-/// 1. Rotiert `delta_v_lv` (lokales Vertikalsystem → ECI).
-/// 2. Berechnet den Post-Burn-Geschwindigkeitsvektor: `v_post = v_tig + delta_v_ref`.
-/// 3. Berechnet Apogee und Perigee aus Post-Burn-Bahn.
+/// 1. Propagiert den aktuellen SV per Kepler-Schritt bis zum TIG (wenn TIG gesetzt).
+/// 2. Rotiert `delta_v_lv` (lokales Vertikalsystem → ECI) am TIG-SV.
+/// 3. Berechnet den Post-Burn-Geschwindigkeitsvektor: `v_post = v_tig + delta_v_ref`.
+/// 4. Berechnet Apogee und Perigee aus Post-Burn-Bahn.
 ///
 /// # Parameter
-/// - `input`: P30-Eingabedaten (SV zum TIG, Δv im LV, Zentralkörper)
+/// - `input`: P30-Eingabedaten (aktueller SV, TIG, Δv im LV, Zentralkörper)
 /// - `alarm`: Alarmzustand — Alarm 0x0300 bei unphysikalischen Parametern
 ///
 /// # Rückgabe
@@ -203,10 +212,26 @@ pub struct P30Output {
 /// # AGC-Quelle
 /// `Comanche055/P30,P37.agc`, P30-Routine + S30.1-Subroutine.
 pub fn p30_compute(input: &P30Input, alarm: &mut AlarmState) -> Option<P30Output> {
-    let r = input.sv_tig.position;
-    let v = input.sv_tig.velocity;
+    // Schritt 1: SV zum TIG propagieren (Kepler), wenn TIG in der Zukunft liegt.
+    let sv_tig = if input.tig_s > input.sv_now.time.as_seconds() {
+        let dt = input.tig_s - input.sv_now.time.as_seconds();
+        let sv_prop = kepler_step(input.sv_now, dt, input.body.mu(), alarm);
+        // Kepler-Konvergenzfehler: sv_prop.position == sv_now.position (kein Schritt möglich).
+        // In diesem Fall liefert kepler_step den Eingabe-SV zurück — kein separater Alarm nötig.
+        StateVector::new(
+            sv_prop.position,
+            sv_prop.velocity,
+            Met::from_seconds(input.tig_s),
+        )
+    } else {
+        // Kein TIG gesetzt (tig_s == 0) oder TIG liegt in der Vergangenheit → direkt verwenden.
+        input.sv_now
+    };
 
-    // LV → ECI Rotation
+    let r = sv_tig.position;
+    let v = sv_tig.velocity;
+
+    // Schritt 2: LV → ECI Rotation
     let dv_ref = lv_to_eci(r, v, input.delta_v_lv);
     let delta_v_ref = match dv_ref {
         Some(dv) => dv,
@@ -402,7 +427,8 @@ mod tests {
         let sv = leo_sv();
         // 100 m/s radiales Δv (nach außen) → Apogee steigt
         let input = P30Input {
-            sv_tig: sv,
+            sv_now: sv,
+            tig_s: 0.0,
             delta_v_lv: Vec3::new(100.0, 0.0, 0.0),
             body: CentralBody::Earth,
         };
@@ -437,7 +463,8 @@ mod tests {
         let sv = leo_sv();
         // 100 m/s along-track (prograde)
         let input = P30Input {
-            sv_tig: sv,
+            sv_now: sv,
+            tig_s: 0.0,
             delta_v_lv: Vec3::new(0.0, 100.0, 0.0),
             body: CentralBody::Earth,
         };
@@ -467,7 +494,8 @@ mod tests {
             Met::from_seconds(0.0),
         );
         let input = P30Input {
-            sv_tig: sv,
+            sv_now: sv,
+            tig_s: 0.0,
             delta_v_lv: Vec3::new(0.0, 10.0, 0.0),
             body: CentralBody::Earth,
         };
@@ -538,7 +566,8 @@ mod tests {
             Met::from_seconds(0.0),
         );
         let input = P30Input {
-            sv_tig: sv,
+            sv_now: sv,
+            tig_s: 0.0,
             delta_v_lv: Vec3::new(0.0, 905.0, 0.0), // Apollo-11-TEI along-track
             body: CentralBody::Moon,
         };

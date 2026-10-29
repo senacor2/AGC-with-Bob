@@ -14,7 +14,8 @@
 mod test_utils;
 
 use agc_core::display::verb_noun::{
-    DisplayRegister, KEY_0, KEY_1, KEY_3, KEY_4, KEY_6, KEY_7, KEY_ENTER, KEY_NOUN, KEY_VERB,
+    DisplayRegister, KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_ENTER, KEY_NOUN,
+    KEY_PLUS, KEY_VERB,
 };
 
 const SCENARIO: &str = "docs/scenarios/tei_pre.scenario";
@@ -261,5 +262,161 @@ fn uc2_moon_orbit_energy_stable() {
     assert!(
         rel_err < 1e-2,
         "Mondorbit Energiefehler nach einer Periode zu groß: rel={rel_err:.2e} (erlaubt < 1 %)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// UC-2-G: V25 N33 — TIG eingeben und in tig_s speichern
+// ---------------------------------------------------------------------------
+
+/// Apollo-11-TIG: 135:23:42 = 487 422 s
+/// Eingabe: V25 N33 ENTER  → Flash
+/// Dann R1=135 (HH), R2=23 (MM), R3=42 (SS) je mit +ZAHL ENTER
+#[test]
+fn uc2_v25n33_sets_tig() {
+    let mut state = test_utils::load_scenario_state(SCENARIO);
+
+    // V25 N33 ENTER — Flash starten
+    test_utils::press_keys(
+        &mut state,
+        &[
+            KEY_VERB, KEY_2, KEY_5, KEY_ENTER, // V25E
+            KEY_NOUN, KEY_3, KEY_3, KEY_ENTER, // N33E → Flash, wartet auf R1
+        ],
+    );
+
+    // R1 = 135 (Stunden): + 1 3 5 ENTER
+    test_utils::press_keys(&mut state, &[KEY_PLUS, KEY_1, KEY_3, KEY_5, KEY_ENTER]);
+    // R2 = 23 (Minuten): + 2 3 ENTER
+    test_utils::press_keys(&mut state, &[KEY_PLUS, KEY_2, KEY_3, KEY_ENTER]);
+    // R3 = 42 (Sekunden): + 4 2 ENTER
+    test_utils::press_keys(&mut state, &[KEY_PLUS, KEY_4, KEY_2, KEY_ENTER]);
+
+    let expected_tig = 135.0 * 3600.0 + 23.0 * 60.0 + 42.0; // = 487 422 s
+    assert!(
+        (state.ctx.guidance.tig_s - expected_tig).abs() < 1.0,
+        "tig_s soll {} s sein, ist {}",
+        expected_tig,
+        state.ctx.guidance.tig_s
+    );
+}
+
+// ---------------------------------------------------------------------------
+// UC-2-H: V06 N33 — TIG anzeigen (HH / MM / SS)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn uc2_n33_displays_tig() {
+    let mut state = test_utils::load_scenario_state(SCENARIO);
+
+    // TIG direkt setzen
+    state.ctx.guidance.tig_s = 135.0 * 3600.0 + 23.0 * 60.0 + 42.0; // 487 422 s
+
+    // V06 N33 ENTER
+    test_utils::press_keys(
+        &mut state,
+        &[
+            KEY_VERB, KEY_0, KEY_6, KEY_ENTER, KEY_NOUN, KEY_3, KEY_3, KEY_ENTER,
+        ],
+    );
+
+    // R1 = 135 (HH), R2 = 23 (MM), R3 = 42 (SS)
+    assert_eq!(
+        state.ctx.display.r1,
+        DisplayRegister::Decimal(135),
+        "R1 (HH) muss 135 sein"
+    );
+    assert_eq!(
+        state.ctx.display.r2,
+        DisplayRegister::Decimal(23),
+        "R2 (MM) muss 23 sein"
+    );
+    assert_eq!(
+        state.ctx.display.r3,
+        DisplayRegister::Decimal(42),
+        "R3 (SS) muss 42 sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// UC-2-I: N33 Blank wenn kein TIG gesetzt
+// ---------------------------------------------------------------------------
+
+#[test]
+fn uc2_n33_blank_when_no_tig() {
+    let mut state = test_utils::load_scenario_state(SCENARIO);
+    // tig_s bleibt 0.0 (Default)
+
+    test_utils::press_keys(
+        &mut state,
+        &[
+            KEY_VERB, KEY_0, KEY_6, KEY_ENTER, KEY_NOUN, KEY_3, KEY_3, KEY_ENTER,
+        ],
+    );
+
+    assert_eq!(
+        state.ctx.display.r1,
+        DisplayRegister::Blank,
+        "R1 muss Blank sein wenn kein TIG gesetzt"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// UC-2-J: TIG-Trigger — P40 startet automatisch wenn MET >= TIG
+// ---------------------------------------------------------------------------
+
+#[test]
+fn uc2_tig_trigger_starts_p40() {
+    use agc_core::navigation::state_vector::StateVector;
+    use agc_core::types::{Met, Vec3};
+
+    let mut state = test_utils::load_scenario_state(SCENARIO);
+
+    // current_sv auf MET 486 522 s setzen (15 min vor TIG)
+    let pos = state.traj.position;
+    let vel = state.traj.velocity;
+    state.ctx.current_sv = StateVector::new(
+        Vec3::new(pos.x, pos.y, pos.z),
+        Vec3::new(vel.x, vel.y, vel.z),
+        Met::from_seconds(486_522.0),
+    );
+
+    // P30 + Δv vorbereiten, damit P40 einen State anlegen kann
+    state.ctx.guidance.delta_v_lv = [0.0, 905.0, 0.0];
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
+    );
+    // current_sv nochmal setzen (P30 braucht es)
+    state.ctx.current_sv = StateVector::new(
+        Vec3::new(pos.x, pos.y, pos.z),
+        Vec3::new(vel.x, vel.y, vel.z),
+        Met::from_seconds(486_522.0),
+    );
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
+    );
+
+    assert!(
+        state.ctx.guidance.p30.is_some(),
+        "P30 muss nach V37E30E Some sein"
+    );
+
+    // TIG setzen: exakt auf aktuelle MET → Trigger muss sofort feuern
+    let tig = 486_522.0_f64;
+    state.ctx.guidance.tig_s = tig;
+
+    // Einen sim_tick ausführen — der TIG-Trigger liegt im Tick
+    agc_sim::sim_loop::sim_tick(&mut state);
+
+    assert!(
+        state.ctx.guidance.p40.is_some(),
+        "P40 muss nach TIG-Erreichen automatisch gestartet sein (Some)"
+    );
+    assert_eq!(
+        state.ctx.guidance.active_program,
+        Some(40),
+        "active_program muss 40 sein nach TIG-Trigger"
     );
 }

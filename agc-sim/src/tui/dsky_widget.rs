@@ -27,7 +27,9 @@ use ratatui::{
 
 use agc_core::display::verb_noun::{DisplayRegister, DisplayState};
 
-use super::segment7::{format_blank, format_decimal, format_min_sec, format_two_digit};
+use super::segment7::{
+    format_blank, format_decimal, format_hour_min_sec, format_min_sec, format_two_digit,
+};
 
 // ---------------------------------------------------------------------------
 // Farb-Konstanten (DSKY-Farbpalette)
@@ -233,6 +235,7 @@ fn render_register(reg: &DisplayRegister, label: &str, x: u16, y: u16, buf: &mut
             format_decimal(*v as i32)
         }
         DisplayRegister::MinSec(s) => format_min_sec(*s),
+        DisplayRegister::HourMinSec(s) => format_hour_min_sec(*s),
     };
 
     let sty = seg_style(true);

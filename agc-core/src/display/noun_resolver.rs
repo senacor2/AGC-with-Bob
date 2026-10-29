@@ -129,7 +129,9 @@ fn deg_to_millideg(deg: f64) -> i32 {
 /// | N17  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]      |
 /// | N20  | OGA [0.01°]      | MGA [0.01°]      | IGA [0.01°]      |
 /// | N22  | THETAD1 [0.01°]  | THETAD2 [0.01°]  | THETAD3 [0.01°]  |
-/// | N40  | VG [m/s]         | TGO [s]          | — (Blank)        |
+/// | N33  | TIG [HH]         | TIG [MM]         | TIG [SS]         |
+/// | N35  | TTOGO [MM:SS]    | — (Blank)        | — (Blank)        |
+/// | N40  | TTOGO [MM:SS]    | VGDISP [m/s]     | DVTOTAL [m/s]    |
 /// | N44  | HAPO [km]        | HPER [km]        | TFF [MM:SS]      |
 /// | N60  | GMAX [0.01 m/s²] | VPRED [m/s]      | GAMMAEI [0.01°]  |
 /// | N61  | LAT(SPL) [0.01°] | LNG(SPL) [0.01°] | HEADSUP [±1]     |
@@ -222,6 +224,55 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
                 DisplayRegister::Decimal(rad_to_centideg(t0)),
                 DisplayRegister::Decimal(rad_to_centideg(t1)),
                 DisplayRegister::Decimal(rad_to_centideg(t2)),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N33 — TIG: Zündzeitpunkt (HH:MM:SS)
+        // Zeigt den per V25/N33 eingegebenen TIG als HH / MM / SS in R1/R2/R3.
+        // Blank wenn kein TIG gesetzt (tig_s == 0.0).
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N33 (TIG).
+        // ------------------------------------------------------------------
+        33 => {
+            if ctx.guidance.tig_s == 0.0 {
+                return [DisplayRegister::Blank; 3];
+            }
+            let total = ctx.guidance.tig_s.max(0.0) as u32;
+            let hh = total / 3600;
+            let mm = (total % 3600) / 60;
+            let ss = total % 60;
+            [
+                DisplayRegister::Decimal(hh as i32),
+                DisplayRegister::Decimal(mm as i32),
+                DisplayRegister::Decimal(ss as i32),
+            ]
+        }
+
+        // ------------------------------------------------------------------
+        // N35 — TTOGO: Zeit bis TIG (MM:SS)
+        // R1 = verbleibende Zeit bis TIG in MM:SS.
+        // Blank wenn kein TIG gesetzt oder TIG bereits vergangen.
+        //
+        // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N35 (TTOGO).
+        // ------------------------------------------------------------------
+        35 => {
+            if ctx.guidance.tig_s == 0.0 {
+                return [DisplayRegister::Blank; 3];
+            }
+            let now_s = ctx.current_sv.time.as_seconds();
+            let remaining = ctx.guidance.tig_s - now_s;
+            if remaining <= 0.0 {
+                return [
+                    DisplayRegister::MinSec(0),
+                    DisplayRegister::Blank,
+                    DisplayRegister::Blank,
+                ];
+            }
+            [
+                DisplayRegister::MinSec(remaining as u32),
+                DisplayRegister::Blank,
+                DisplayRegister::Blank,
             ]
         }
 

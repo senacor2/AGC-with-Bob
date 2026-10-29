@@ -530,7 +530,10 @@ fn v25n61_sequential_noun_entries_fill_load_registers() {
     let mut state = SimState::new();
 
     // V25 N61 ENTER — Lade-Sequenz starten
-    press_keys(&mut state, &[KEY_VERB, KEY_2, KEY_5, KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+    press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_2, KEY_5, KEY_NOUN, KEY_6, KEY_1, KEY_ENTER],
+    );
 
     assert!(
         state.ctx.display.flash_state,
