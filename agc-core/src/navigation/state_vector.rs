@@ -49,6 +49,12 @@ impl StateVector {
     pub const ZERO: Self = Self::new(Vec3::ZERO, Vec3::ZERO, Met::from_seconds(0.0));
 }
 
+impl Default for StateVector {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

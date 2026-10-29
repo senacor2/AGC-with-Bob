@@ -65,14 +65,39 @@ fn uc2_p30_start() {
 }
 
 // ---------------------------------------------------------------------------
-// UC-2-C: N44 ist Blank wenn P30 kein Ergebnis hat (kein Manöver berechnet)
+// UC-2-C: N44 zeigt sofort Kreisbahnparameter nach P30-Start (kein Δv nötig)
+//
+// P30 berechnet nach V37E30E direkt aus dem aktuellen Bahnzustandsvektor —
+// auch ohne vorherige Δv-Eingabe (delta_v_lv = [0,0,0] = Null-Manöver).
+// Das Ergebnis ist die aktuelle Kreisbahn-Apogee/Perigee.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn uc2_n44_blank_when_p30_no_output() {
     let mut state = test_utils::load_scenario_state(SCENARIO);
 
-    // P30 starten — ohne Δv-Eingabe ist ctx.guidance.p30 = None
+    // P30 starten — ohne Δv-Eingabe berechnet P30 die aktuelle Kreisbahn
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
+    );
+
+    // ctx.current_sv muss vor dem Dispatch gesetzt sein — sim_tick macht das,
+    // aber beim direkten Tastatur-Dispatch im Test läuft kein Tick.
+    // Wir setzen current_sv manuell auf den tei_pre-Szenario-Zustandsvektor.
+    {
+        use agc_core::navigation::state_vector::StateVector;
+        use agc_core::types::{Met, Vec3};
+        let pos = state.traj.position;
+        let vel = state.traj.velocity;
+        state.ctx.current_sv = StateVector::new(
+            Vec3::new(pos.x, pos.y, pos.z),
+            Vec3::new(vel.x, vel.y, vel.z),
+            Met::from_seconds(state.traj.time_s),
+        );
+    }
+
+    // P30 nochmals auslösen (mit gesetztem current_sv)
     test_utils::press_keys(
         &mut state,
         &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
@@ -86,11 +111,11 @@ fn uc2_n44_blank_when_p30_no_output() {
         ],
     );
 
-    // Ohne P30-Ausgabe muss R1 Blank sein
+    // Nach P30-Berechnung aus gültigem SV muss R1 Werte enthalten (nicht Blank)
     let r1_blank = matches!(state.ctx.display.r1, DisplayRegister::Blank);
     assert!(
-        r1_blank,
-        "R1 (HAPO) muss Blank sein wenn P30 kein Ergebnis hat"
+        !r1_blank,
+        "R1 (HAPO) darf nicht Blank sein — P30 berechnet sofort aus aktuellem SV"
     );
 }
 

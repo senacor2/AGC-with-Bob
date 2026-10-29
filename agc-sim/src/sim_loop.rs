@@ -192,6 +192,32 @@ impl Default for SimState {
 pub fn sim_tick(state: &mut SimState) {
     let dt = TICK_MS as f64 / 1000.0;
 
+    // --- Aktuellen Bahnzustandsvektor in ctx übertragen ---
+    // Guidance-Programme (P30) lesen ctx.current_sv als TIG-Zustandsvektor.
+    // agc_physics::State → agc_core::StateVector konvertieren.
+    {
+        use agc_core::navigation::state_vector::StateVector;
+        use agc_core::types::{Met, Vec3 as CoreVec3};
+        state.ctx.current_sv = StateVector::new(
+            CoreVec3::new(
+                state.traj.position.x,
+                state.traj.position.y,
+                state.traj.position.z,
+            ),
+            CoreVec3::new(
+                state.traj.velocity.x,
+                state.traj.velocity.y,
+                state.traj.velocity.z,
+            ),
+            Met::from_seconds(state.traj.time_s),
+        );
+    }
+
+    // --- Alarm-Zustand aus sim-eigenem Puffer in ctx synchronisieren ---
+    // Guidance-Programme schreiben in ctx.alarms; nach dem Tick schreiben wir
+    // ctx.alarms zurück in state.alarms (für TUI und process_key).
+    state.ctx.alarms = state.alarms;
+
     // --- T4RUPT ---
     t4rupt_tick(&mut state.ctx.display);
 
@@ -423,6 +449,9 @@ pub fn sim_tick(state: &mut SimState) {
 
     // --- IMU: spezifische Kraft ≈ 0 im freien Fall (Keplerbahn) ---
     state.imu.update(Vec3::ZERO, dt);
+
+    // --- Alarm-Zustand zurückschreiben (Guidance-Alarme an TUI sichtbar machen) ---
+    state.alarms = state.ctx.alarms;
 
     // COMP ACTY: leuchtet alle 40 Ticks kurz auf (ca. 400 ms Periode, 40 ms EIN)
     state.comp_acty = (state.tick % 40) < 4;

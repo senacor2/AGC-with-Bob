@@ -21,6 +21,9 @@
 use crate::context::AgcContext;
 use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
+use crate::guidance::p30_37::{p30_compute, P30Input};
+use crate::navigation::orbital::CentralBody;
+use crate::types::Vec3;
 
 // ---------------------------------------------------------------------------
 // VerbAction
@@ -181,13 +184,33 @@ const GUIDANCE_PRIORITY: u8 = 10;
 
 /// P30 — External ΔV Targeting.
 ///
-/// Trägt P30 in den Executive ein. Der tatsächliche P30-Step wird im
-/// job-callback über den `AgcContext` via globalen Mutex aufgerufen
-/// (vollständige Executive-Integration in Sub-Task 6).
+/// Berechnet Apogee, Perigee und Δv-ECI (DELVSIN) aus dem aktuellen
+/// Bahnzustandsvektor und dem zuvor per V25/N81 eingegebenen `delta_v_lv`.
+/// Schreibt das Ergebnis in `ctx.guidance.p30`.
 ///
-/// AGC source: `Comanche055/P30,P37.agc`, P30CALL.
+/// Zentralkörper wird aus dem Betrag des aktuellen Positionsvektors abgeleitet:
+/// `|r| < 3 000 000 m` → Mond, sonst Erde.
+///
+/// AGC source: `Comanche055/P30,P37.agc`, P30CALL / S30.1.
 fn program_p30(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(30);
+
+    // Zentralkörper aus aktuellem Positionsvektor ableiten.
+    const MOON_THRESHOLD_M: f64 = 3_000_000.0;
+    let body = if ctx.current_sv.position.magnitude() < MOON_THRESHOLD_M {
+        CentralBody::Moon
+    } else {
+        CentralBody::Earth
+    };
+
+    let dv = ctx.guidance.delta_v_lv;
+    let input = P30Input {
+        sv_tig: ctx.current_sv,
+        delta_v_lv: Vec3::new(dv[0], dv[1], dv[2]),
+        body,
+    };
+
+    ctx.guidance.p30 = p30_compute(&input, &mut ctx.alarms);
     ctx.exec.schedule(GUIDANCE_PRIORITY, program_noop_fn);
 }
 
@@ -514,6 +537,16 @@ impl VerbDispatcher {
                 ctx.guidance.splashdown_lat = r1 as f64 * CENTIDEG_TO_RAD;
                 ctx.guidance.splashdown_lon = r2 as f64 * CENTIDEG_TO_RAD;
                 ctx.guidance.heads_up = r3 >= 0;
+                stop_flash(&mut ctx.display);
+            }
+
+            // N81: DELVLVC — Δv-Manövervektor im LV-System [m/s]
+            // R1 = DVx (radial), R2 = DVy (along-track), R3 = DVz (normal) [m/s]
+            // Wert wird als Ganzzahl [m/s] übergeben (identische Skalierung, kein Faktor).
+            // Wird von P30 als Manöverimpuls genutzt.
+            // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N81 (DELVLVC).
+            81 => {
+                ctx.guidance.delta_v_lv = [r1 as f64, r2 as f64, r3 as f64];
                 stop_flash(&mut ctx.display);
             }
 

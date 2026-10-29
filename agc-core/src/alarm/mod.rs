@@ -25,6 +25,7 @@ pub const ALARM_QUEUE_DEPTH: usize = 3;
 ///
 /// Enthält die zuletzt aufgetretenen Program-Alarm-Codes (FIFO, ältester zuerst).
 /// Ein Eintrag von `0` bedeutet „leer".
+#[derive(Copy, Clone, Debug)]
 pub struct AlarmState {
     codes: [u16; ALARM_QUEUE_DEPTH],
     count: usize,

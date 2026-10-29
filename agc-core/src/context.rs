@@ -8,6 +8,7 @@
 //! einzigen `&mut AgcContext`, damit Handler-Funktionszeiger typisiert sind als
 //! `fn(&mut AgcContext)`.
 
+use crate::alarm::AlarmState;
 use crate::display::verb_noun::DisplayState;
 use crate::executive::Executive;
 use crate::guidance::p30_37::P30Output;
@@ -15,6 +16,7 @@ use crate::guidance::p37_70::P37EmState;
 use crate::guidance::p40_47::{P40State, P41State, P47State};
 use crate::guidance::p51_53::P51State;
 use crate::guidance::p61_67::{P61State, P64State, P67State};
+use crate::navigation::state_vector::StateVector;
 use crate::restart::phase_table::PhaseTable;
 
 // ---------------------------------------------------------------------------
@@ -91,6 +93,17 @@ pub struct GuidanceContext {
     pub heads_up: bool,
 
     // -----------------------------------------------------------------------
+    // P30-Eingabedaten (Crew via V25/N81)
+    // -----------------------------------------------------------------------
+    /// Δv-Manövervektor im lokalen Vertikalsystem [radial, along-track, normal] [m/s].
+    ///
+    /// Wird von der Crew per V25/N81 eingegeben. P30 liest diesen Wert als
+    /// Manöverimpuls. Ist `[0.0; 3]` solange noch keine Eingabe erfolgt ist.
+    ///
+    /// AGC-Quelle: `Comanche055/P30,P37.agc`, DELVSLV (DELVLVC-Eingabe).
+    pub delta_v_lv: [f64; 3],
+
+    // -----------------------------------------------------------------------
     // Programmzustände — TEI / LOI (P30, P37-EM)
     // -----------------------------------------------------------------------
     /// Letzter berechneter P30-External-ΔV-Targeting-Output, `None` wenn P30 nie lief.
@@ -165,6 +178,7 @@ impl Default for GuidanceContext {
             splashdown_lat: 0.0,
             splashdown_lon: 0.0,
             heads_up: false,
+            delta_v_lv: [0.0; 3],
             p30: None,
             p37_em: None,
             p40: None,
@@ -194,6 +208,8 @@ impl Default for GuidanceContext {
 /// - [`Executive`][]: kooperativer Job-Scheduler
 /// - [`PhaseTable`][]: restart-sichere Fortschrittsverfolgung
 /// - [`GuidanceContext`][]: Aggregat aller Guidance-Programmzustände
+/// - [`StateVector`][]: aktueller Bahnzustandsvektor (wird vor jedem Tick aktualisiert)
+/// - [`AlarmState`][]: Program-Alarm-Zustand
 #[derive(Debug, Default)]
 pub struct AgcContext {
     /// DSKY-Anzeigestatus (VERBREG, NOUNREG, MODREG, R1–R3, Statuslichter).
@@ -207,4 +223,20 @@ pub struct AgcContext {
 
     /// Aggregat aller Guidance-Programmzustände.
     pub guidance: GuidanceContext,
+
+    /// Aktueller Bahn-Zustandsvektor (ECI J2000, m / m/s).
+    ///
+    /// Wird von der Sim-Loop vor jedem Dispatch-Tick aktualisiert.
+    /// Guidance-Programme (z. B. P30) lesen diesen Wert als TIG-Zustandsvektor.
+    ///
+    /// AGC source: `Comanche055/ORBITAL_INTEGRATION.agc`, RATT/VATT.
+    pub current_sv: StateVector,
+
+    /// Program-Alarm-Zustand (FAILREG-Warteschlange).
+    ///
+    /// Guidance-Berechnungen schreiben Alarm-Codes hierein; die Sim-Loop
+    /// liest den Zustand für die TUI-Alarmanzeige aus.
+    ///
+    /// AGC source: `Comanche055/ALARM_AND_ABORT.agc`.
+    pub alarms: AlarmState,
 }
