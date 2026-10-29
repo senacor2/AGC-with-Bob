@@ -29,9 +29,30 @@ und wählt den Mond als Zentralkörper für den Physik-Integrator.
 
 ## Checkliste
 
+### Schritt 0: Δv-Manövervektor eingeben (V25 N81)
+
+Vor P30 muss die Crew den gewünschten Δv-Impuls im lokalen Vertikalsystem
+(LV) eingeben: `[radial, along-track, normal]` in m/s.
+
+Für den Apollo-11-TEI-Burn: ≈ 905 m/s along-track (R2), radial und normal ≈ 0.
+
+**Eingabe**: `V25N81E` dann die drei Werte einzeln bestätigen
+= VERB → 2 → 5 → NOUN → 8 → 1 → ENTER
+
+Danach erscheint das Blinken (VERB/NOUN-Flash). Die drei Werte werden
+nacheinander als Ziffernfolge + ENTER übernommen:
+
+| Register | Wert (Beispiel Apollo 11 TEI) | Einheit |
+|----------|-------------------------------|---------|
+| R1 | `0` (radial) | m/s |
+| R2 | `905` (along-track) | m/s |
+| R3 | `0` (normal) | m/s |
+
+---
+
 ### Schritt 1: P30 starten (External ΔV Targeting)
 
-**Eingabe**: `V37E30E`  
+**Eingabe**: `V37E30E`
 = VERB → 3 → 7 → ENTER → 3 → 0 → ENTER
 
 **Erwartet**:
@@ -39,21 +60,22 @@ und wählt den Mond als Zentralkörper für den Physik-Integrator.
 |---------|------|
 | PROG | 30 |
 
-P30 berechnet sofort Burn-Parameter aus dem aktuellen Bahnzustand.
+P30 liest den in Schritt 0 eingegebenen Δv-Vektor und berechnet sofort
+Apogee/Perigee der Post-Burn-Bahn sowie den in ECI rotierten Δv-Vektor.
 
 ---
 
 ### Schritt 2: Burn-Plan prüfen (N44: HAPO/HPER/TFF)
 
-**Eingabe**: `V06E44E`  
-= VERB → 0 → 6 → ENTER → NOUN → 4 → 4 → ENTER
+**Eingabe**: `V06N44E`
+= VERB → 0 → 6 → NOUN → 4 → 4 → ENTER
 
 **Erwartet**:
-| Register | Noun | Wert | Einheit |
-|----------|------|------|---------|
-| R1 | N44 | HAPO (Apogee-Höhe nach Manöver) | km |
-| R2 | N44 | HPER (Perigee-Höhe nach Manöver) | km |
-| R3 | N44 | TFF (Zeit bis Atm.-Eintritt) | s |
+| Register | Noun | Wert (Beispiel) | Einheit |
+|----------|------|-----------------|---------|
+| R1 | N44 | HAPO ≈ 400 000 (Erdrückkehrbahn-Apogee) | km |
+| R2 | N44 | HPER ≈ −5 300 (unter Erdradius = Eintritt) | km |
+| R3 | N44 | TFF = 0 (noch nicht berechnet) | s |
 
 Alle Register nicht Blank → P30 hat Burn-Plan berechnet.
 
@@ -61,15 +83,20 @@ Alle Register nicht Blank → P30 hat Burn-Plan berechnet.
 
 ### Schritt 3: Δv-Komponenten prüfen (N81: DVx/DVy/DVz)
 
-**Eingabe**: `V06E81E`  
-= VERB → 0 → 6 → ENTER → NOUN → 8 → 1 → ENTER
+> **Voraussetzung**: Schritt 0 muss vor P30-Start durchgeführt worden sein.
+> Ohne Δv-Eingabe zeigen alle Register `0`.
 
-**Erwartet**:
-| Register | Bedeutung | Einheit |
-|----------|-----------|---------|
-| R1 | DVx (ECI x-Komponente) | m/s |
-| R2 | DVy (ECI y-Komponente) | m/s |
-| R3 | DVz (ECI z-Komponente) | m/s |
+**Eingabe**: `V06N81E`
+= VERB → 0 → 6 → NOUN → 8 → 1 → ENTER
+
+N81 zeigt den von P30 in ECI rotierten Δv-Vektor (DELVSIN).
+
+**Erwartet** (nach Schritt 0 mit `[0, 905, 0]` m/s LV):
+| Register | Bedeutung | Wert (Beispiel) | Einheit |
+|----------|-----------|-----------------|---------|
+| R1 | DVx (ECI x-Komponente) | ≠ 0 | m/s |
+| R2 | DVy (ECI y-Komponente) | ≠ 0 | m/s |
+| R3 | DVz (ECI z-Komponente) | ≈ 0 | m/s |
 
 ---
 
@@ -87,8 +114,8 @@ Alle Register nicht Blank → P30 hat Burn-Plan berechnet.
 
 ### Schritt 5: Burn-Monitor einschalten (V16 N40)
 
-**Eingabe**: `V16E40E`  
-= VERB → 1 → 6 → ENTER → NOUN → 4 → 0 → ENTER
+**Eingabe**: `V16N40E`
+= VERB → 1 → 6 → NOUN → 4 → 0 → ENTER
 
 **Erwartet**:
 - Monitor-Modus aktiv (R1/R2/R3 werden 1× pro Sekunde aktualisiert)

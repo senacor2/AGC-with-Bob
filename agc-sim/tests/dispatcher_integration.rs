@@ -516,20 +516,21 @@ fn v25n61_enter_uses_load_buffer_not_display() {
     );
 }
 
-/// Drei sequenzielle Noun-Eingaben im V25-Flash-Modus befüllen load_r1/r2/r3.
+/// Drei sequenzielle Zifferneingaben im V25-Flash-Modus befüllen load_r1/r2/r3
+/// und rufen accept_load nach der dritten Eingabe auf.
 ///
 /// Ablauf:
-/// 1. `VERB 2 5 ENTER NOUN 6 1 ENTER` → V25 N61 aktiv, Flash an.
-/// 2. Erste Noun-Eingabe (`NOUN 1 1 ENTER`) → load_r1 = 11, load_reg_idx = 1.
-/// 3. Zweite Noun-Eingabe (`NOUN 2 2 ENTER`) → load_r2 = 22, load_reg_idx = 2.
-/// 4. Dritte Noun-Eingabe (`NOUN 3 3 ENTER`) → load_r3 = 33, load_reg_idx bleibt 2.
+/// 1. `VERB 2 5 NOUN 6 1 ENTER` → V25 N61 aktiv, Flash an.
+/// 2. Erste Dateneingabe (Ziffern `1 1 ENTER`) → load_r1 = 11, load_reg_idx = 1.
+/// 3. Zweite Dateneingabe (Ziffern `2 2 ENTER`) → load_r2 = 22, load_reg_idx = 2.
+/// 4. Dritte Dateneingabe (Ziffern `3 3 ENTER`) → load_r3 = 33, accept_load →
+///    load_reg_idx = 0, Flash gestoppt (N61 accept_load stoppt Flash).
 #[test]
 fn v25n61_sequential_noun_entries_fill_load_registers() {
     let mut state = SimState::new();
 
-    // V25 N61 ENTER — Lade-Sequenz starten (NounSet löst Dispatcher aus → flash=true)
-    press_keys(&mut state, &[KEY_VERB, KEY_2, KEY_5, KEY_ENTER]);
-    press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
+    // V25 N61 ENTER — Lade-Sequenz starten
+    press_keys(&mut state, &[KEY_VERB, KEY_2, KEY_5, KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
 
     assert!(
         state.ctx.display.flash_state,
@@ -537,20 +538,20 @@ fn v25n61_sequential_noun_entries_fill_load_registers() {
     );
     assert_eq!(state.load_reg_idx, 0, "Index startet bei 0");
 
-    // Erste Dateneingabe: Noun 11
-    press_keys(&mut state, &[KEY_NOUN, KEY_1, KEY_1, KEY_ENTER]);
+    // Erste Dateneingabe: 11 (direkte Ziffern, kein NOUN)
+    press_keys(&mut state, &[KEY_1, KEY_1, KEY_ENTER]);
     assert_eq!(state.load_r1, 11, "load_r1 muss 11 sein");
     assert_eq!(state.load_reg_idx, 1, "Index nach erster Eingabe = 1");
 
-    // Zweite Dateneingabe: Noun 22
-    press_keys(&mut state, &[KEY_NOUN, KEY_2, KEY_2, KEY_ENTER]);
+    // Zweite Dateneingabe: 22
+    press_keys(&mut state, &[KEY_2, KEY_2, KEY_ENTER]);
     assert_eq!(state.load_r2, 22, "load_r2 muss 22 sein");
     assert_eq!(state.load_reg_idx, 2, "Index nach zweiter Eingabe = 2");
 
-    // Dritte Dateneingabe: Noun 33
-    press_keys(&mut state, &[KEY_NOUN, KEY_3, KEY_3, KEY_ENTER]);
+    // Dritte Dateneingabe: 33 → accept_load → Flash stopp, index = 0
+    press_keys(&mut state, &[KEY_3, KEY_3, KEY_ENTER]);
     assert_eq!(state.load_r3, 33, "load_r3 muss 33 sein");
-    assert_eq!(state.load_reg_idx, 2, "Index bleibt bei 2 (kein Überlauf)");
+    assert_eq!(state.load_reg_idx, 0, "Index nach accept_load zurück auf 0");
 }
 
 // ---------------------------------------------------------------------------

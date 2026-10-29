@@ -84,8 +84,17 @@ pub struct SimState {
     /// Roher Eingabepuffer für R3 (entspricht AGC ZREG).
     pub load_r3: i32,
     /// Index des nächsten zu befüllenden Lade-Registers (0=R1, 1=R2, 2=R3).
-    /// Wird bei V25-Dateneingabe nach jeder Noun-Bestätigung inkrementiert.
+    /// Wird bei V25-Dateneingabe nach jeder Zahl-ENTER inkrementiert.
     pub load_reg_idx: u8,
+    /// Zahlenpuffer für V25-Dateneingabe: akkumulierte Ziffern (Absolutwert).
+    ///
+    /// Erlaubt Werte ±99999 (5-stellig). Ziffern werden per Keypad eingegeben,
+    /// Vorzeichen per KEY_PLUS / KEY_MINUS, ENTER übernimmt den Wert.
+    pub load_num_buf: i32,
+    /// Vorzeichen des aktuellen Zahlenpuffers: +1 oder −1.
+    pub load_num_sign: i32,
+    /// Anzahl der bereits eingetippten Ziffern (max. 5).
+    pub load_num_digits: u8,
     /// Aktiver Zentralkörper für den RK4-Integrator.
     ///
     /// Wird beim Laden eines Szenarios automatisch aus der Bahnhöhe abgeleitet:
@@ -123,6 +132,9 @@ impl SimState {
             load_r2: 0,
             load_r3: 0,
             load_reg_idx: 0,
+            load_num_buf: 0,
+            load_num_sign: 1,
+            load_num_digits: 0,
             step_body: Body::Earth,
             scenario_input: None,
             status_msg: None,
@@ -148,6 +160,9 @@ impl SimState {
         self.load_r2 = 0;
         self.load_r3 = 0;
         self.load_reg_idx = 0;
+        self.load_num_buf = 0;
+        self.load_num_sign = 1;
+        self.load_num_digits = 0;
 
         // Zentralkörper aus Bahnradius ableiten.
         // Schwelle 3 000 000 m: Mondorbit max. ~2 500 km Radius, Erdorbit min. ~6 371 km.
@@ -238,6 +253,106 @@ pub fn sim_tick(state: &mut SimState) {
     // SimDsky implementiert DskyHal — read_keycode() leert den FIFO.
     while let Some(raw) = state.dsky.read_keycode() {
         if let Some(agc_key) = AgcKey::new(raw) {
+            // V25-Dateneingabe-Modus: Im Flash-Modus mit V25 und einem Noun der
+            // keine spezielle Behandlung hat (nicht N22/N93), fangen wir
+            // Ziffern, +/−, CLR und ENTER direkt ab — bevor process_key sie
+            // als Operator Error oder Noun-Wert (≤99) fehlinterpretiert.
+            //
+            // Erlaubt Werte ±99999 (5 Ziffern), kompatibel mit AGC XREG/YREG/ZREG.
+            //
+            // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, ENTPAS / STOREDAT.
+            let v25_data_mode = state.ctx.display.flash_state
+                && state.ctx.display.verb.val() == 25
+                && !matches!(state.ctx.display.noun.val(), 22 | 93);
+
+            if v25_data_mode {
+                use agc_core::display::verb_noun::{DisplayRegister, KEY_CLR, KEY_MINUS, KEY_PLUS};
+                let k = agc_key.val();
+                match k {
+                    // Vorzeichen: setzt Vorzeichen, setzt Ziffernpuffer zurück
+                    KEY_PLUS => {
+                        state.load_num_sign = 1;
+                        state.load_num_buf = 0;
+                        state.load_num_digits = 0;
+                        state.ctx.display.lights.operator_error = false;
+                        continue;
+                    }
+                    KEY_MINUS => {
+                        state.load_num_sign = -1;
+                        state.load_num_buf = 0;
+                        state.load_num_digits = 0;
+                        state.ctx.display.lights.operator_error = false;
+                        continue;
+                    }
+                    // Ziffern 0–9: in Zahlenpuffer akkumulieren (max. 5 Stellen)
+                    0..=9 => {
+                        if state.load_num_digits < 5 {
+                            state.load_num_buf = state.load_num_buf * 10 + k as i32;
+                            state.load_num_digits += 1;
+                            // Live-Anzeige des Puffers im aktuellen Register
+                            let live = DisplayRegister::Decimal(
+                                state.load_num_sign * state.load_num_buf,
+                            );
+                            match state.load_reg_idx {
+                                0 => state.ctx.display.r1 = live,
+                                1 => state.ctx.display.r2 = live,
+                                _ => state.ctx.display.r3 = live,
+                            }
+                        }
+                        continue;
+                    }
+                    // CLR: Zahlenpuffer zurücksetzen
+                    KEY_CLR => {
+                        state.load_num_buf = 0;
+                        state.load_num_sign = 1;
+                        state.load_num_digits = 0;
+                        state.ctx.display.lights.operator_error = false;
+                        continue;
+                    }
+                    // ENTER: aktuellen Zahlenpuffer als Registerwert übernehmen,
+                    // dann Index inkrementieren. Bei R3: accept_load() aufrufen.
+                    //
+                    // Wenn keine Ziffern eingegeben wurden (load_num_digits == 0),
+                    // fällt ENTER durch zum normalen process_key-Pfad. Das erlaubt
+                    // accept_load via ENTER ohne vorherige Zifferneingabe (Rückwärts-
+                    // kompatibilität mit direktem load_r*-Setzen in Tests).
+                    KEY_ENTER if state.load_num_digits > 0 => {
+                        let val = state.load_num_sign * state.load_num_buf;
+                        match state.load_reg_idx {
+                            0 => {
+                                state.load_r1 = val;
+                                state.ctx.display.r1 = DisplayRegister::Decimal(val);
+                                state.load_reg_idx = 1;
+                            }
+                            1 => {
+                                state.load_r2 = val;
+                                state.ctx.display.r2 = DisplayRegister::Decimal(val);
+                                state.load_reg_idx = 2;
+                            }
+                            _ => {
+                                state.load_r3 = val;
+                                state.ctx.display.r3 = DisplayRegister::Decimal(val);
+                                // Alle drei Register befüllt → accept_load
+                                VerbDispatcher::accept_load(
+                                    state.load_r1,
+                                    state.load_r2,
+                                    state.load_r3,
+                                    &mut state.ctx,
+                                );
+                                state.load_reg_idx = 0;
+                            }
+                        }
+                        // Puffer für nächsten Wert zurücksetzen
+                        state.load_num_buf = 0;
+                        state.load_num_sign = 1;
+                        state.load_num_digits = 0;
+                        continue;
+                    }
+                    // Alle anderen Tasten (VERB, NOUN, …) normal verarbeiten
+                    _ => {}
+                }
+            }
+
             let event = process_key(
                 &mut state.ctx.display,
                 &mut state.input_buf,
