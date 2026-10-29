@@ -29,6 +29,17 @@ und wählt den Mond als Zentralkörper für den Physik-Integrator.
 
 ## Checkliste
 
+> **Alarm 1400 — Ursache und Abhilfe**
+>
+> P30 liest den internen Zustandsvektor (`current_sv`), der erst nach dem ersten
+> `sim_tick()` befüllt wird. Wird P30 aufgerufen **bevor der Simulator mindestens
+> einen Tick gelaufen ist**, enthält `current_sv.position = (0, 0, 0)`.
+> `lv_to_eci` kann den Nullvektor nicht normalisieren und wirft Alarm `0x0300`
+> (TUI-Anzeige: `P1400` — „P30-Fehler: Zustandsvektor ungültig").
+>
+> **Abhilfe**: Simulator starten und das Szenario vollständig laden lassen (die
+> TUI zeigt Positionswerte an), bevor die erste DSKY-Eingabe erfolgt.
+
 ### Schritt 0: Δv-Manövervektor eingeben (V25 N81)
 
 Vor P30 muss die Crew den gewünschten Δv-Impuls im lokalen Vertikalsystem

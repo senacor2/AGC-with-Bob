@@ -100,7 +100,10 @@ fn alarm_description(code: u16) -> &'static str {
         0o1100 => "Display-Queue-Überlauf",
         0o1200 => "Nav-Fehler",
         0o1300 => "Guidance-Fehler",
-        0o1400 => "DAP-Fehler",
+        // 0o1400 = 0x0300: P30-Alarm — r=0 oder hyperbolische Bahn (SV nicht initialisiert)
+        0o1400 => "P30-Fehler: Zustandsvektor ungültig (r=0 oder vor erstem Tick)",
+        // 0o2104 = 0x0444: DAP Gimbal-Lock in KALCMANU
+        0o2104 => "DAP-Fehler: Gimbal-Lock",
         _ => "Unbekannter Alarm",
     }
 }
