@@ -93,6 +93,18 @@ pub struct GuidanceContext {
     pub heads_up: bool,
 
     // -----------------------------------------------------------------------
+    // Fahrzeugparameter
+    // -----------------------------------------------------------------------
+    /// Fahrzeugmasse vor dem nächsten Burn [kg].
+    ///
+    /// Wird aus dem Szenario geladen (`mass_kg`-Feld) und von P40 als
+    /// Startmasse für die Tsiolkovsky-Gleichung (Brennzeit-Berechnung) verwendet.
+    /// Standardwert: 28 800 kg (Apollo CSM-Nominalmasse vor TEI).
+    ///
+    /// AGC-Quelle: `Comanche055/P40-P47.agc`, FENG / EMDOT (pad-geladene Masse).
+    pub vehicle_mass_kg: f64,
+
+    // -----------------------------------------------------------------------
     // P30-Eingabedaten (Crew via V25/N81)
     // -----------------------------------------------------------------------
     /// Δv-Manövervektor im lokalen Vertikalsystem [radial, along-track, normal] [m/s].
@@ -178,6 +190,7 @@ impl Default for GuidanceContext {
             splashdown_lat: 0.0,
             splashdown_lon: 0.0,
             heads_up: false,
+            vehicle_mass_kg: 28_800.0,
             delta_v_lv: [0.0; 3],
             p30: None,
             p37_em: None,

@@ -1,17 +1,41 @@
-# AGC Scenario File — Lunar Orbit 110 km (pre-TEI burn)
-# Quelle: Physik-Konstanten aus agc-physics/src/bodies.rs
-#   MU_MOON = 4.904_869_5e12 m³/s²
-#   R_MOON  = 1_737_400 m
-# Apollo-11-typische Mondorbit-Höhe von ~110 km (vgl. Vallado §5.4)
+# AGC Scenario: TEI Pre-Burn (Trans-Earth Injection Vorbereitung)
 #
-# r      = 1_737_400 + 110_000 = 1_847_400 m
-# v_circ = sqrt(4.904869e12 / 1_847_400) ≈ 1630.3 m/s
-# Bahn: Kreisbahn in der x-y-Ebene, Startposition auf +x-Achse
+# Apollo-11 Mondorbit, ~110 km Höhe (Kreisbahn).
+# Startzeitpunkt: 15 Minuten VOR TIG-TEI — damit die Crew ausreichend Zeit
+# hat, P30 vorzubereiten, den Burn-Plan zu prüfen und P40 zu starten.
+#
+# Referenz: Apollo 11 Mission Report (MSC-00171), Kapitel 4.1.3
+#   TEI-TIG (MET) ≈ 135:23:42 = 487 422 s
+#   Szenario-Start (MET) = 487 422 − 900 = 486 522 s  (= TIG − 15 min)
+#   Mondumlaufbahn: 110,5 × 101,4 NM (≈ 204 × 188 km)
+#   Post-TEI-Burn-Δv ≈ +905 m/s along-track
+#
+# Koordinatensystem: ECI J2000, Mond als Zentralkörper.
+# Der Simulator erkennt automatisch |r| < 3 000 000 m → Mond-Orbit.
+#
+# Mondorbit 110 km Kreisbahn:
+#   R_mond = 1 737 400 m
+#   h      =   110 000 m
+#   r      = 1 847 400 m
+#   v_circ = sqrt(μ_mond / r) = sqrt(4.904869e12 / 1847400) ≈ 1629.9 m/s
+#
+# Bahnposition zum Szenario-Start: 15 min vor TIG entspricht einem
+# Orbitalwinkel von ~15.1° (Umlaufzeit ≈ 7113 s → 360°/7113 s × 900 s).
+# Zur Vereinfachung: Startposition weiterhin auf +x-Achse.
+# Der Simulator-Integrator propagiert die Bahn bis zum realen TIG.
 
 pos_x_m  = 1847400.0
 pos_y_m  = 0.0
 pos_z_m  = 0.0
 vel_x_ms = 0.0
-vel_y_ms = 1630.3
+vel_y_ms = 1629.9
 vel_z_ms = 0.0
-time_s   = 0.0
+
+# Mission Elapsed Time zum Szenario-Start [s]
+# TIG-TEI ≈ 487 422 s  →  Szenario-Start = TIG − 15 min = 486 522 s
+time_s   = 486522.0
+
+# Fahrzeugmasse vor TEI-Burn [kg]
+# Apollo 11 CSM (Columbia) vor TEI: Trockenmasse + Rest-Treibstoff ≈ 28 802 kg
+# Quelle: Apollo 11 Mission Report, Tabelle 4-I (CM/SM Mass Summary)
+mass_kg  = 28802.0

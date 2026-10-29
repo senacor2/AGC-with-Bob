@@ -22,6 +22,7 @@ use crate::context::AgcContext;
 use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
 use crate::guidance::p30_37::{p30_compute, P30Input};
+use crate::guidance::p40_47::{P40State, SPS_ISP, SPS_THRUST_N};
 use crate::navigation::orbital::CentralBody;
 use crate::types::Vec3;
 
@@ -224,9 +225,30 @@ fn program_p37(ctx: &mut AgcContext) {
 
 /// P40 — SPS-Haupttriebwerksbrand.
 ///
-/// AGC source: `Comanche055/P40-P47.agc`, P40CALL.
+/// Initialisiert [`P40State`] aus dem letzten P30-Output (delta_v_ref-Betrag)
+/// und der in `guidance.vehicle_mass_kg` hinterlegten Fahrzeugmasse.
+///
+/// Wenn P30 noch nicht ausgeführt wurde (`ctx.guidance.p30 == None`), wird
+/// P40 ohne aktiven Burn-State gestartet — N40 zeigt dann weiterhin Blank.
+///
+/// AGC source: `Comanche055/P40-P47.agc`, P40CALL / P40CSM.
 fn program_p40(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(40);
+
+    // Δv-Betrag aus P30-Ergebnis (DELVSIN) bestimmen.
+    // Falls P30 noch nicht lief, keinen P40State anlegen → N40 bleibt Blank.
+    if let Some(ref p30) = ctx.guidance.p30 {
+        let dv_mag = p30.delta_v_ref.magnitude();
+        if dv_mag > 0.0 {
+            ctx.guidance.p40 = Some(P40State::new(
+                dv_mag,
+                SPS_ISP,
+                SPS_THRUST_N,
+                ctx.guidance.vehicle_mass_kg,
+            ));
+        }
+    }
+
     ctx.exec.schedule(GUIDANCE_PRIORITY, program_noop_fn);
 }
 

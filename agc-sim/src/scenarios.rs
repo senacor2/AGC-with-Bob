@@ -19,8 +19,8 @@
 //! Pflichtfelder: `pos_x_m`, `pos_y_m`, `pos_z_m`, `vel_x_ms`, `vel_y_ms`,
 //! `vel_z_ms`, `time_s`.
 //!
-//! Optionale Felder (für künftige Erweiterungen, werden bei Unbekanntheit
-//! ignoriert): `thetad_0_deg`, `thetad_1_deg`, `thetad_2_deg`.
+//! Optionale Felder (werden bei Unbekanntheit ignoriert):
+//! `thetad_0_deg`, `thetad_1_deg`, `thetad_2_deg`, `mass_kg`.
 
 use agc_physics::math::Vec3;
 use agc_physics::trajectory::State;
@@ -42,12 +42,20 @@ pub struct ScenarioData {
     pub time_s: f64,
     /// Optionale Gimbal-Zielwinkel (Grad) für P51/P52 (`thetad_N_deg`).
     pub thetad_deg: Option<[f64; 3]>,
+    /// Optionale Fahrzeugmasse [kg] für P40 (`mass_kg`).
+    /// Falls nicht angegeben, verwendet der Simulator den Standardwert aus `GuidanceContext`.
+    pub mass_kg: Option<f64>,
 }
 
 impl ScenarioData {
     /// Konvertiert `ScenarioData` in einen physikalischen [`State`].
     pub fn to_state(self) -> State {
         State::new(self.position, self.velocity, self.time_s)
+    }
+
+    /// Optionale Fahrzeugmasse [kg], falls im Szenario angegeben.
+    pub fn vehicle_mass_kg(&self) -> Option<f64> {
+        self.mass_kg
     }
 }
 
@@ -86,6 +94,7 @@ pub fn parse_scenario_str(content: &str) -> Result<ScenarioData, String> {
     let mut thetad_0: Option<f64> = None;
     let mut thetad_1: Option<f64> = None;
     let mut thetad_2: Option<f64> = None;
+    let mut mass_kg: Option<f64> = None;
 
     for line in content.lines() {
         // Kommentare und Leerzeilen überspringen
@@ -112,6 +121,7 @@ pub fn parse_scenario_str(content: &str) -> Result<ScenarioData, String> {
             "thetad_0_deg" => thetad_0 = Some(v),
             "thetad_1_deg" => thetad_1 = Some(v),
             "thetad_2_deg" => thetad_2 = Some(v),
+            "mass_kg" => mass_kg = Some(v),
             // Unbekannte Felder werden ignoriert
             _ => {}
         }
@@ -141,6 +151,7 @@ pub fn parse_scenario_str(content: &str) -> Result<ScenarioData, String> {
         velocity,
         time_s,
         thetad_deg,
+        mass_kg,
     })
 }
 

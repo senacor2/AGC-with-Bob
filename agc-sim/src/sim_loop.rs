@@ -183,6 +183,11 @@ impl SimState {
                 td_deg[2] * DEG_TO_RAD,
             ];
         }
+
+        // Optionale Fahrzeugmasse aus Szenario übernehmen.
+        if let Some(m) = data.mass_kg {
+            self.ctx.guidance.vehicle_mass_kg = m;
+        }
     }
 }
 
@@ -290,9 +295,8 @@ pub fn sim_tick(state: &mut SimState) {
                             state.load_num_buf = state.load_num_buf * 10 + k as i32;
                             state.load_num_digits += 1;
                             // Live-Anzeige des Puffers im aktuellen Register
-                            let live = DisplayRegister::Decimal(
-                                state.load_num_sign * state.load_num_buf,
-                            );
+                            let live =
+                                DisplayRegister::Decimal(state.load_num_sign * state.load_num_buf);
                             match state.load_reg_idx {
                                 0 => state.ctx.display.r1 = live,
                                 1 => state.ctx.display.r2 = live,
