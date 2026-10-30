@@ -23,6 +23,7 @@ use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
 use crate::guidance::p30_37::{p30_compute, P30Input};
 use crate::guidance::p40_47::{p40_step, P40State, SPS_ISP, SPS_THRUST_N};
+use crate::guidance::p61_67::{P61State, P64State, P67State};
 use crate::hal::sps::NoopSps;
 use crate::navigation::orbital::{CentralBody, MOON_THRESHOLD_M};
 use crate::types::Vec3;
@@ -321,9 +322,17 @@ fn program_p52(ctx: &mut AgcContext) {
 
 /// P61 — Entry Preparation.
 ///
+/// Initialisiert P61State mit den aktuellen Splashdown-Koordinaten aus
+/// `ctx.guidance`, damit N60/N63 sofort Werte anzeigen können.
+///
 /// AGC source: `Comanche055/P61-P67.agc`, P61CALL.
 fn program_p61(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(61);
+    ctx.guidance.p61 = Some(P61State::new(
+        ctx.guidance.splashdown_lat,
+        ctx.guidance.splashdown_lon,
+        ctx.guidance.heads_up,
+    ));
     ctx.exec.schedule(GUIDANCE_PRIORITY, program_noop_fn);
 }
 
@@ -345,9 +354,13 @@ fn program_p63(ctx: &mut AgcContext) {
 
 /// P64 — Constant-Drag Entry.
 ///
+/// Initialisiert P64State, damit N69/N74 Roll-Kommando und Drag-Last
+/// sofort anzeigen können.
+///
 /// AGC source: `Comanche055/P61-P67.agc`, P64CALL.
 fn program_p64(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(64);
+    ctx.guidance.p64 = Some(P64State::new());
     ctx.exec.schedule(GUIDANCE_PRIORITY, program_noop_fn);
 }
 
@@ -361,9 +374,13 @@ fn program_p65(ctx: &mut AgcContext) {
 
 /// P67 — Terminal Phase.
 ///
+/// Initialisiert P67State, damit N67/N66 Restabstand und Fehlerterme
+/// sofort anzeigen können.
+///
 /// AGC source: `Comanche055/P61-P67.agc`, P67CALL.
 fn program_p67(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(67);
+    ctx.guidance.p67 = Some(P67State::new());
     ctx.exec.schedule(GUIDANCE_PRIORITY, program_noop_fn);
 }
 

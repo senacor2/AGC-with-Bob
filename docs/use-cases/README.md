@@ -38,7 +38,9 @@ DSKY-Tasten werden als Kurzzeichen dargestellt:
 | `-` | MINUS | Vorzeichen − |
 | `0`–`9` | Ziffern | Zahleneingabe |
 
-**Beispiel**: `V37E61E` = VERB → 3 → 7 → ENTER → 6 → 1 → ENTER
+**Kanonische Folge**: `VvvNnnE` = VERB → v → v → NOUN → n → n → ENTER
+**Ausnahme V37**: `V37EppE` = VERB → 3 → 7 → ENTER → p → p → ENTER
+(Programmnummer ist kein Noun, daher ENTER statt NOUN nach V37)
 
 ### Programm/Verb/Noun-Referenz
 
@@ -61,7 +63,7 @@ Jeder Schritt, der Display-Ausgaben prüft, enthält eine Tabelle:
 ```markdown
 ### Schritt N: [Beschreibung]
 
-**Eingabe**: `VxxEyyE` (Tastenfolge)  
+**Eingabe**: `VxxNyyE` (kanonisch) bzw. `V37EppE` (Programm-Aufruf)
 **Erwartet**: PROG=XX, R1/R2/R3 Werte / nicht Blank  
 **Prüft**: [Zustand der Guidance-Variablen]  
 ```

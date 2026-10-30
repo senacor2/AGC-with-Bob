@@ -77,8 +77,8 @@ Tasteneingabe:
 
 ### Schritt 4: CDU-Winkel prüfen
 
-**Eingabe**: `V06E20E`  
-= VERB → 0 → 6 → ENTER → 2 → 0 → ENTER
+**Eingabe**: `V06N20E`
+= VERB → 0 → 6 → NOUN → 2 → 0 → ENTER
 
 **Erwartet**:
 | Register | Wert | Bedeutung |

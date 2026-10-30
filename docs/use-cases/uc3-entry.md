@@ -36,7 +36,7 @@ Entry Interface Apollo 11:
 
 ### Schritt 1: P61 starten (Entry Preparation)
 
-**Eingabe**: `V37E61E`  
+**Eingabe**: `V37E61E`
 = VERB → 3 → 7 → ENTER → 6 → 1 → ENTER
 
 **Erwartet**:
@@ -48,8 +48,8 @@ Entry Interface Apollo 11:
 
 ### Schritt 2: Splashdown-Koordinaten eingeben (V25 N61)
 
-**Eingabe**: `V25E61E` dann Werte  
-= VERB → 2 → 5 → ENTER → NOUN → 6 → 1 → ENTER
+**Eingabe**: `V25N61E` dann Werte
+= VERB → 2 → 5 → NOUN → 6 → 1 → ENTER
 
 Beispiel Apollo-11 Splashdown (Pazifik):
 ```
@@ -60,10 +60,9 @@ HEADSUP  =     +1   (Lift-Down = heads-up)
 
 Tasteneingabe:
 ```
-N + 1 3 5 4 E   ← LAT(SPL) = +1354 centideg
-N - 1 6 9 4 2 E ← LNG(SPL) = -16942 centideg
-N + 1 E         ← HEADSUP = 1
-E               ← Bestätigen (accept_load)
++ 1 3 5 4 E   ← LAT(SPL) = +1354 centideg
+- 1 6 9 4 2 E ← LNG(SPL) = -16942 centideg
++ 1 E         ← HEADSUP = 1
 ```
 
 **Erwartet**:
@@ -74,8 +73,8 @@ E               ← Bestätigen (accept_load)
 
 ### Schritt 3: Splashdown-Koordinaten prüfen (V06 N61)
 
-**Eingabe**: `V06E61E`  
-= VERB → 0 → 6 → ENTER → NOUN → 6 → 1 → ENTER
+**Eingabe**: `V06N61E`
+= VERB → 0 → 6 → NOUN → 6 → 1 → ENTER
 
 **Erwartet**:
 | Register | Noun | Wert | Einheit |
@@ -88,13 +87,13 @@ E               ← Bestätigen (accept_load)
 
 ### Schritt 4: Eintrittsparameter prüfen (V06 N60)
 
-**Eingabe**: `V06E60E`  
-= VERB → 0 → 6 → ENTER → NOUN → 6 → 0 → ENTER
+**Eingabe**: `V06N60E`
+= VERB → 0 → 6 → NOUN → 6 → 0 → ENTER
 
-**Erwartet** (wenn P61-Berechnung abgeschlossen):
+**Erwartet**:
 | Register | Noun | Bedeutung | Einheit |
 |----------|------|-----------|---------|
-| R1 | N60 | GMAX (max. Belastung) | g |
+| R1 | N60 | GMAX (max. Belastung) | 0.01 m/s² |
 | R2 | N60 | VPRED (Geschwindigkeit bei Splashdown) | m/s |
 | R3 | N60 | GAMMAEI (Eintrittwinkel) | 0.01° |
 
@@ -102,7 +101,7 @@ E               ← Bestätigen (accept_load)
 
 ### Schritt 5: P64 starten (Constant-Drag Phase)
 
-**Eingabe**: `V37E64E`  
+**Eingabe**: `V37E64E`
 = VERB → 3 → 7 → ENTER → 6 → 4 → ENTER
 
 **Erwartet**:
@@ -116,19 +115,19 @@ Roll-Kommandos steuern Lift: ROLLC in N69 R1, DL in N69 R2.
 
 ### Schritt 6: Roll-Kommandos prüfen (V06 N69)
 
-**Eingabe**: `V06E69E`  
-= VERB → 0 → 6 → ENTER → NOUN → 6 → 9 → ENTER
+**Eingabe**: `V06N69E`
+= VERB → 0 → 6 → NOUN → 6 → 9 → ENTER
 
 | Register | Bedeutung | Einheit |
 |----------|-----------|---------|
-| R1 | ROLLC (Roll-Kommando) | ° |
-| R2 | DL (Drag-Level) | m/s² |
+| R1 | ROLLC (Roll-Kommando) | 0.01° |
+| R2 | DL (Drag-Level) | 0.01 m/s² |
 
 ---
 
 ### Schritt 7: P67 starten (Terminal Phase)
 
-**Eingabe**: `V37E67E`  
+**Eingabe**: `V37E67E`
 = VERB → 3 → 7 → ENTER → 6 → 7 → ENTER
 
 **Erwartet**:
@@ -140,21 +139,21 @@ Roll-Kommandos steuern Lift: ROLLC in N69 R1, DL in N69 R2.
 
 ### Schritt 8: Position prüfen (V06 N67)
 
-**Eingabe**: `V06E67E`  
-= VERB → 0 → 6 → ENTER → NOUN → 6 → 7 → ENTER
+**Eingabe**: `V06N67E`
+= VERB → 0 → 6 → NOUN → 6 → 7 → ENTER
 
 | Register | Noun | Bedeutung | Einheit |
 |----------|------|-----------|---------|
 | R1 | N67 | RTOGO (Restabstand zum Splashdown) | km |
-| R2 | N67 | Aktuelle Breite | 0.01° |
-| R3 | N67 | Aktuelle Länge | 0.01° |
+| R2 | N67 | LAT(ZIE) (Ziel-Breite) | 0.01° |
+| R3 | N67 | LON(ZIE) (Ziel-Länge) | 0.01° |
 
 ---
 
 ### Schritt 9: Guidance-Fehler-Monitor (V16 N66)
 
-**Eingabe**: `V16E66E`  
-= VERB → 1 → 6 → ENTER → NOUN → 6 → 6 → ENTER
+**Eingabe**: `V16N66E`
+= VERB → 1 → 6 → NOUN → 6 → 6 → ENTER
 
 Monitor-Modus: R1/R2/R3 werden 1× pro Sekunde aus P64/P67-Guidance-Daten
 aktualisiert (Guidance-Abweichungen, Lateral-Fehler).

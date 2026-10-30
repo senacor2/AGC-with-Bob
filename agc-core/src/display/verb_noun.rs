@@ -592,6 +592,28 @@ pub fn process_key(
             KeyEvent::None
         }
         KEY_NOUN => {
+            // Kanonische Folge V vv N nn E:
+            // KEY_NOUN schließt eine laufende Verb-Eingabe ab (wie ENTER es täte)
+            // und wechselt in den Noun-Eingabemodus.
+            // Liegt kein Verb im Puffer (Idle oder Noun-Modus), beginnt einfach
+            // eine neue Noun-Eingabe.
+            //
+            // AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, CHARIN.
+            if buf.mode == InputMode::Verb && buf.count > 0 {
+                let val = buf.to_value();
+                buf.clear();
+                buf.mode = InputMode::Noun;
+                return match VerbCode::new(val) {
+                    Some(v) => {
+                        state.verb = v;
+                        KeyEvent::VerbSet(v)
+                    }
+                    None => {
+                        state.lights.operator_error = true;
+                        KeyEvent::OperatorError
+                    }
+                };
+            }
             buf.clear();
             buf.mode = InputMode::Noun;
             KeyEvent::None
@@ -901,8 +923,36 @@ mod tests {
         KeyCode::new(k).unwrap()
     }
 
+    /// Kanonische Folge V vv N nn E:
+    /// KEY_NOUN schließt Verb-Eingabe ab und wechselt in Noun-Modus,
+    /// KEY_ENTER schließt Noun-Eingabe ab und triggert den Dispatch.
     #[test]
-    fn verb_entry_sequence() {
+    fn verb_noun_canonical_sequence() {
+        let mut state = DisplayState::new();
+        let mut buf = InputBuffer::new();
+        let mut alarm = crate::alarm::AlarmState::new();
+
+        // V 0 6  — zwei Verb-Ziffern, NOUN schließt Verb 06 ab
+        process_key(&mut state, &mut buf, make_key(KEY_VERB), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_0), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_6), &mut alarm);
+        let ev_verb = process_key(&mut state, &mut buf, make_key(KEY_NOUN), &mut alarm);
+        assert_eq!(ev_verb, KeyEvent::VerbSet(VerbCode(6)));
+        assert_eq!(state.verb, VerbCode(6));
+        assert_eq!(buf.mode, InputMode::Noun);
+
+        // N 6 0  — zwei Noun-Ziffern, ENTER schließt Noun 60 ab
+        process_key(&mut state, &mut buf, make_key(KEY_6), &mut alarm);
+        process_key(&mut state, &mut buf, make_key(KEY_0), &mut alarm);
+        let ev_noun = process_key(&mut state, &mut buf, make_key(KEY_ENTER), &mut alarm);
+        assert_eq!(ev_noun, KeyEvent::NounSet(NounCode(60)));
+        assert_eq!(state.noun, NounCode(60));
+        assert_eq!(buf.mode, InputMode::Idle);
+    }
+
+    /// Verb-Eingabe mit ENTER abschließen bleibt weiterhin möglich (V37-Kompatibilität).
+    #[test]
+    fn verb_entry_with_enter_still_works() {
         let mut state = DisplayState::new();
         let mut buf = InputBuffer::new();
         let mut alarm = crate::alarm::AlarmState::new();
@@ -914,7 +964,6 @@ mod tests {
 
         assert_eq!(ev, KeyEvent::VerbSet(VerbCode(37)));
         assert_eq!(state.verb, VerbCode(37));
-        // Puffer muss danach leer/Idle sein
         assert_eq!(buf.mode, InputMode::Idle);
     }
 
