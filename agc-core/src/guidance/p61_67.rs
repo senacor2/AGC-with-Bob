@@ -157,9 +157,141 @@ pub struct EntryDisplayData {
     pub tte_s: f64,
 }
 
+/// Berechnet die Flugzeit von der aktuellen Position bis zu einem Zielradius `r_t`
+/// analytisch über die Kepler-Gleichung.
+///
+/// Algorithmus:
+/// 1. Wahre Anomalie ν₁ aus r, ṙ und Bahn-Parametern (Formel über h und p).
+/// 2. Wahre Anomalie ν₂ aus r_t = p / (1 + e·cos(ν₂)) — absteigender Ast (ν₂ < 0).
+/// 3. Exzentrische Anomalien E₁, E₂ via tan(E/2) = √((1−e)/(1+e)) · tan(ν/2).
+/// 4. Δt = √(a³/μ) · (M₂ − M₁) mit M = E − e·sin(E).
+///
+/// # Parameter
+/// - `r_mag`:    aktueller Ortsvektor-Betrag [m]
+/// - `r_dot`:    radiale Geschwindigkeit ṙ = (r·v)/|r| [m/s]
+/// - `h_sq`:     |h|² = |r×v|² [m⁴/s²]
+/// - `a`:        große Halbachse [m]
+/// - `e`:        numerische Exzentrizität
+/// - `r_t`:      Zielradius [m] (muss < r_mag sein)
+/// - `mu`:       Gravitationsparameter [m³/s²]
+///
+/// # Rückgabe
+/// Flugzeit in Sekunden; im Fehlerfall (Bahn erreicht r_t nicht) 0.0.
+fn kepler_time_to_radius(
+    r_mag: f64,
+    r_dot: f64,
+    h_sq: f64,
+    a: f64,
+    e: f64,
+    r_t: f64,
+    mu: f64,
+) -> f64 {
+    // semi-latus rectum: p = h²/μ
+    let p = h_sq / mu;
+
+    // Wahre Anomalie am aktuellen Punkt:
+    // r = p / (1 + e·cos(ν)) → cos(ν) = (p/r − 1) / e
+    // Vorzeichen über ṙ: ṙ > 0 → aufsteigend → ν ∈ (0, π); ṙ < 0 → absteigend → ν ∈ (−π, 0)
+    let cos_nu1 = if e > 1e-9 {
+        ((p / r_mag) - 1.0) / e
+    } else {
+        0.0 // Kreisbahn: ν undefiniert
+    };
+    let cos_nu1 = cos_nu1.clamp(-1.0, 1.0);
+    let nu1_abs = libm::acos(cos_nu1);
+    let nu1 = if r_dot >= 0.0 { nu1_abs } else { -nu1_abs }; // absteigend: negatives ν
+
+    // Wahre Anomalie am Zielradius r_t (absteigender Ast: ν₂ < 0)
+    let cos_nu2 = if e > 1e-9 { ((p / r_t) - 1.0) / e } else { 0.0 };
+    let cos_nu2 = cos_nu2.clamp(-1.0, 1.0);
+    let nu2 = -libm::acos(cos_nu2); // absteigender Ast
+
+    // Exzentrische Anomalien über Halbwinkel-Transformation
+    // tan(E/2) = sqrt((1−e)/(1+e)) · tan(ν/2)
+    let k = libm::sqrt((1.0 - e) / (1.0 + e).max(1e-15));
+
+    let e1 = 2.0 * libm::atan(k * libm::tan(nu1 / 2.0));
+    let e2 = 2.0 * libm::atan(k * libm::tan(nu2 / 2.0));
+
+    // Mittlere Anomalien: M = E − e·sin(E)
+    let m1 = e1 - e * libm::sin(e1);
+    let m2 = e2 - e * libm::sin(e2);
+
+    // ΔM = M₂ − M₁.
+    // Absteigend vom weiten Punkt zu r_t: ν₁ < ν₂ < 0 (z.B. −120° → −9°).
+    // Exzentrische und mittlere Anomalie sind monoton in ν →  M₂ > M₁ → delta_m > 0.
+    let delta_m = m2 - m1;
+
+    // Mittlere Bewegung [rad/s]
+    let n = libm::sqrt(mu / (a * a * a));
+    let dt = delta_m / n;
+
+    if dt <= 0.0 {
+        0.0
+    } else {
+        dt
+    }
+}
+
+/// Hilfsfunktion (VGAMCALC): Berechnet Geschwindigkeit und Flugpfadwinkel an einem
+/// Zielradius `r_t` aus dem aktuellen Zustandsvektor — reine Kepler-Mechanik.
+///
+/// Gleichungen aus dem AGC (P61-P67.agc, VGAMCALC, S. 813–814):
+///
+/// ```text
+/// v_t    = sqrt(v² + 2·μ·(1/r_t − 1/r))          [Vis-Viva]
+/// cos(γ) = sqrt(p·μ) / (r_t · v_t)                [Drehimpuls-Formel]
+/// ```
+///
+/// wobei p = |h|²/μ (semi-latus rectum) und h = r × v.
+///
+/// # Parameter
+/// - `r_mag`: aktueller Betrag des Ortsvektors [m]
+/// - `v_sq`:  v·v des aktuellen Geschwindigkeitsvektors [m²/s²]
+/// - `h_sq`:  |h|² = |r×v|² [m⁴/s²]
+/// - `r_t`:   Zielradius [m]
+/// - `mu`:    Gravitationsparameter [m³/s²]
+/// - `descending`: `true` wenn der Körper absteigt (ṙ < 0) → γ negativ
+///
+/// # Rückgabe
+/// `(v_t, gamma_deg)` — Geschwindigkeit [m/s] und Flugpfadwinkel [deg] am Zielradius.
+/// Bei numerischen Problemen wird `gamma_deg` auf −90° begrenzt.
+///
+/// AGC source: `Comanche055/P61-P67.agc`, VGAMCALC / PREVGAM.
+fn vgamcalc(r_mag: f64, v_sq: f64, h_sq: f64, r_t: f64, mu: f64, descending: bool) -> (f64, f64) {
+    // Vis-Viva am Zielradius
+    let v_t_sq = v_sq + 2.0 * mu * (1.0 / r_t - 1.0 / r_mag);
+    let v_t = if v_t_sq > 0.0 {
+        libm::sqrt(v_t_sq)
+    } else {
+        // Energie reicht nicht — Körper erreicht r_t nicht
+        return (0.0, if descending { -90.0 } else { 90.0 });
+    };
+
+    // semi-latus rectum: p = h²/μ
+    let p = h_sq / mu;
+
+    // cos(γ) = sqrt(p) / (r_t · v_t / sqrt(μ)) = sqrt(p·μ) / (r_t · v_t)
+    let cos_gamma = libm::sqrt(p * mu) / (r_t * v_t);
+    let cos_gamma_clamped = cos_gamma.clamp(-1.0, 1.0);
+    let gamma_rad = libm::acos(cos_gamma_clamped); // VGAMCALC liefert immer positiv
+
+    // Vorzeichen: negativ bei Abstieg
+    let gamma_deg = if descending {
+        -gamma_rad * 180.0 / core::f64::consts::PI
+    } else {
+        gamma_rad * 180.0 / core::f64::consts::PI
+    };
+
+    (v_t, gamma_deg)
+}
+
 /// Berechnet Entry-Anzeigedaten für P61 (entspricht S61.2 im AGC).
 ///
-/// Nutzt die Vis-Viva-Gleichung und eine vereinfachte Bremsbeschleunigungsschätzung.
+/// Berechnet GMAX, VPRED und GAMMAEI durch Extrapolation der Kepler-Bahn
+/// auf den 400k-ft-Radius (121 920 m) — identisch zum AGC-Algorithmus VGAMCALC.
+/// VIO und TTE beziehen sich auf den EMSALT-Radius (ebenfalls 121 920 m für
+/// orbitale Eintritte).
 ///
 /// # Parameter
 /// - `sv`:  aktueller Zustandsvektor (ECI J2000, m / m/s)
@@ -181,15 +313,16 @@ pub fn compute_entry_display(
     let r = sv.position;
     let v = sv.velocity;
     let r_mag = r.magnitude();
-    let v_mag = libm::sqrt(v.dot(v));
+    let v_sq = v.dot(v);
+    let v_mag = libm::sqrt(v_sq);
 
     if r_mag < 1.0 || v_mag < 1.0 {
         raise(alarm, ALARM_P61_IMU_UNSATISFACTORY);
         return None;
     }
 
-    // vis-viva: a = 1 / (2/r − v²/μ)
-    let inv_a = 2.0 / r_mag - v_mag * v_mag / mu;
+    // Vis-Viva: große Halbachse
+    let inv_a = 2.0 / r_mag - v_sq / mu;
     if inv_a <= 0.0 {
         // Hyperbolische Bahn — kein Wiedereintritt möglich
         raise(alarm, ALARM_P61_IMU_UNSATISFACTORY);
@@ -197,71 +330,78 @@ pub fn compute_entry_display(
     }
     let a = 1.0 / inv_a;
 
-    // Perigee-Radius: r_per = a · (1 − e)
+    // Drehimpulsvektor und semi-latus rectum
     let h_vec = r.cross(v);
     let h_sq = h_vec.dot(h_vec);
+
+    // Abstieg feststellen: ṙ = (r · v) / |r|  < 0 → absteigend
+    let r_dot = r.dot(v) / r_mag;
+    let descending = r_dot < 0.0;
+
+    // Perigee-Radius: r_per = a · (1 − e)
     let e_sq = 1.0 - h_sq / (mu * a);
     let e = if e_sq < 0.0 { 0.0 } else { libm::sqrt(e_sq) };
     let r_per = a * (1.0 - e);
 
-    // EMS-Interface Radius
-    let r_ems = r_eq + EMSALT_ORBITAL_M;
-
-    // Geschwindigkeit bei EMS per Vis-Viva
-    let vio = libm::sqrt(libm::fabs(mu * (2.0 / r_ems - 1.0 / a)));
-
-    // Eintrittswinkel γ_EI: sin(γ) = -ṙ / v
-    // ṙ = (r · v) / |r|
-    let r_dot = r.dot(v) / r_mag;
-    let cos_fpa = libm::sqrt(h_sq) / (r_mag * v_mag);
-    // Sicherheits-Clamp für acos
-    let cos_fpa_clamped = cos_fpa.clamp(-1.0, 1.0);
-    let fpa_rad = libm::acos(cos_fpa_clamped);
-    // Vorzeichen: negativ bei Abstieg (ṙ < 0)
-    let gamma_ei_deg = if r_dot < 0.0 {
-        -fpa_rad * 180.0 / core::f64::consts::PI
-    } else {
-        fpa_rad * 180.0 / core::f64::consts::PI
-    };
-
-    // Zeit bis EMS: vereinfachte Kegelschnitt-Transferzeit
-    // Für r > r_ems und absteigend: t = (r_mag - r_ems) / |ṙ|
-    // Für r ≤ r_ems (bereits unter EMS) oder aufsteigend: halbe Umlaufzeit
-    let tte_s = if r_dot < -0.1 && r_mag > r_ems {
-        (r_mag - r_ems) / (-r_dot)
-    } else {
-        // Bahnperiode schätzen (halbe Umlaufzeit als konservative Schätzung)
-        let period = 2.0 * core::f64::consts::PI * libm::sqrt(a * a * a / mu);
-        period * 0.5
-    };
-
-    // RTGO: Reichweite bis Splashdown ab EMS (vereinfacht: 10 × Verzögerungshöhe)
-    // Echte Gleichung: RTGO = THETAH/360 × r_eq  (Winkelreichweite)
-    // Hier: vereinfachte Schätzung basierend auf L/D und Eintrittsbedingungen
-    let rtgo_m = libm::fabs(vio * vio / (2.0 * G0)) * L_OVER_D * 2.0;
-
-    // GMAX: vereinfachtes Modell aus dem AGC
-    // GMAX ≈ (4 / (1 + 4.8·vbar²)) · (γ − 6.05° − 2.4·vbar²) − 10·(L/D − 0.3) + 10
-    // vbar = (v [ft/s] − 36000) / 20000
-    let v_fps = vio * 3.280_839_895; // m/s → ft/s
-    let vbar = (v_fps - 36_000.0) / 20_000.0;
-    let vbar_sq = vbar * vbar;
-    let gamma_rad = gamma_ei_deg * core::f64::consts::PI / 180.0;
-    let gmax_raw = (4.0 / (1.0 + 4.8 * vbar_sq))
-        * (gamma_rad.abs() - 6.05_f64.to_radians() - 2.4 * vbar_sq)
-        - 10.0 * (L_OVER_D - 0.3)
-        + 10.0;
-    let gmax = if gmax_raw < 0.0 { 0.0 } else { gmax_raw };
-
-    // VPRED: vorhergesagte Geschwindigkeit bei 400 000 ft ≈ vio (für Phase 1-Näherung)
-    let r_400k = r_eq + 121_920.0; // 400 000 ft in m
-    let v_pred = libm::sqrt(libm::fabs(mu * (2.0 / r_400k - 1.0 / a)));
+    // EMS-/400k-ft-Radius  (orbital: EMSALT = 400 000 ft = 121 920 m)
+    let r_ems = r_eq + EMSALT_ORBITAL_M; // ≡ r_400k
 
     // Prüfe: Perigee muss unter EMS liegen für Wiedereintritt
     if r_per > r_ems + 10_000.0 {
         raise(alarm, ALARM_P61_IMU_UNSATISFACTORY);
         return None;
     }
+
+    // -----------------------------------------------------------------------
+    // VGAMCALC bei EMSALT (300k ft im AGC für GMAX, dann 400k ft für N60)
+    // Für die Simulation: EMSALT = 400 000 ft, daher ein einziger Aufruf.
+    // -----------------------------------------------------------------------
+
+    // 300k ft-Radius für GMAX-Berechnung (AGC nutzt 300k ft, nicht 400k ft!)
+    // 300 000 ft = 91 440 m
+    const R_300KFT_M: f64 = 91_440.0;
+    let r_300k = r_eq + R_300KFT_M;
+
+    let (v_300k, gamma_300k_deg) = vgamcalc(r_mag, v_sq, h_sq, r_300k, mu, descending);
+
+    // VIO / GAMMAEI / VPRED: alle bei 400k ft = EMSALT_ORBITAL_M
+    let (vio, gamma_ei_deg) = vgamcalc(r_mag, v_sq, h_sq, r_ems, mu, descending);
+    let v_pred = vio; // VPRED ≈ VIO (gleicher Radius für orbitale Eintritte)
+
+    // -----------------------------------------------------------------------
+    // TTE: Zeit bis EMSALT — analytisch über Kepler-Gleichung.
+    //
+    // Wahrer Anomalie-Differenz: r = p/(1 + e·cos(ν))
+    // Exzentrische Anomalie: tan(E/2) = sqrt((1−e)/(1+e)) · tan(ν/2)
+    // Kepler-Gleichung: M = E − e·sin(E)
+    // Δt = sqrt(a³/μ) · ΔM
+    // -----------------------------------------------------------------------
+    let tte_s = if r_mag > r_ems {
+        kepler_time_to_radius(r_mag, r_dot, h_sq, a, e, r_ems, mu)
+    } else {
+        0.0
+    };
+
+    // -----------------------------------------------------------------------
+    // GMAXCALC (AGC P61-P67.agc S. 808):
+    // GMAX = (4 / (1 + 4.8·vbar²)) · (|γ_deg| − 6.05 − 2.4·vbar²) − 10·(L/D − 0.3) + 10
+    // Alle Winkelgrößen in Grad (nicht Radiant) — direkt aus der AGC-Kommentarformel.
+    // vbar = (v_300k [ft/s] − 36 000) / 20 000
+    // Eingabe: γ und v bei 300k ft (nicht bei 400k ft)
+    // -----------------------------------------------------------------------
+    let v_300k_fps = v_300k * 3.280_839_895; // m/s → ft/s
+    let vbar = (v_300k_fps - 36_000.0) / 20_000.0;
+    let vbar_sq = vbar * vbar;
+    let gamma_300k_abs_deg = gamma_300k_deg.abs(); // Grad, nicht Radiant!
+    let gmax_raw = (4.0 / (1.0 + 4.8 * vbar_sq)) * (gamma_300k_abs_deg - 6.05 - 2.4 * vbar_sq)
+        - 10.0 * (L_OVER_D - 0.3)
+        + 10.0;
+    let gmax = if gmax_raw < 0.0 { 0.0 } else { gmax_raw };
+
+    // -----------------------------------------------------------------------
+    // RTGO: vereinfachte Schätzung (Winkelreichweite ab EMS)
+    // -----------------------------------------------------------------------
+    let rtgo_m = libm::fabs(vio * vio / (2.0 * G0)) * L_OVER_D * 2.0;
 
     Some(EntryDisplayData {
         gmax,
@@ -552,19 +692,17 @@ mod tests {
 
     /// Erstellt einen typischen Wiedereintritts-Zustandsvektor.
     ///
-    /// Perigee ≈ 120 km, e ≈ 0.96 (stark elliptisch), absteigende Bahn.
+    /// Position bei 300 km Höhe, v = 9 700 m/s, γ ≈ −10° (elliptische Bahn,
+    /// Perigee bei ~35 km — klar unter dem EMS-Radius 122 km).
     fn entry_sv() -> StateVector {
-        // Näherungs-Rückkehrbahn von Mond zur Erde:
-        // Apogee ≈ 400 000 km, Perigee ≈ 120 km
-        // Hier: Position bei r ≈ 6 500 km (gerade in Eintrittszone)
-        let r_mag = 6_500_000.0_f64; // 6 500 km
-        let v_mag = 11_000.0_f64; // 11 km/s (typisch Lunar-Return)
-                                  // Absteigende Bahn: v hauptsächlich entgegengesetzt zu r, etwas radial
+        // γ = −10° sorgt für Perigee bei ~35 km (tief in Atmosphäre).
+        // v = 9700 m/s < v_escape(300 km) ≈ 10340 m/s → elliptisch.
+        let r_mag = 6_378_137.0_f64 + 300_000.0; // 300 km Höhe
+        let v_mag = 9_700.0_f64;
         let r = Vec3::new(r_mag, 0.0, 0.0);
-        // Geschwindigkeit: leichter Abstieg (γ ≈ -6.5°)
-        let gamma_rad = -6.5_f64 * core::f64::consts::PI / 180.0;
+        let gamma_rad = -10.0_f64 * core::f64::consts::PI / 180.0;
         let v = Vec3::new(
-            v_mag * libm::sin(gamma_rad), // radiale Komponente (negativ = absteigend)
+            v_mag * libm::sin(gamma_rad), // radiale Komponente (absteigend)
             v_mag * libm::cos(gamma_rad), // along-track
             0.0,
         );
@@ -600,8 +738,12 @@ mod tests {
         assert!(d.vio > 0.0, "VIO muss positiv sein");
         // VPRED muss positiv sein
         assert!(d.v_pred > 0.0, "VPRED muss positiv sein");
-        // TTE muss positiv sein
-        assert!(d.tte_s > 0.0, "TTE muss positiv sein");
+        // TTE muss positiv sein (SV liegt bei 500 km > EMS 122 km)
+        assert!(
+            d.tte_s > 0.0,
+            "TTE = {:.0} s muss positiv sein (SV liegt über EMS)",
+            d.tte_s
+        );
         // Eintrittswinkel soll für Lunar-Return im Bereich [-10°, 0°] liegen
         assert!(
             d.gamma_ei_deg <= 0.0 && d.gamma_ei_deg >= -15.0,
@@ -611,7 +753,73 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 2: compute_entry_display — hyperbolische Bahn → Alarm
+    // Test 2: compute_entry_display — Apollo-11-Referenz (60 min vor EI)
+    //
+    // Bahn: Trans-Earth Coast, e ≈ 0.938, a ≈ 103 973 km
+    // Szenario: 17 126 km Höhe, v_inertial ≈ 5 485 m/s
+    // Erwartet: GAMMAEI ≈ −6.5°, VIO ≈ 11 000 m/s, GMAX ≈ 3–5 g
+    // -----------------------------------------------------------------------
+    #[test]
+    fn entry_display_apollo11_reference() {
+        // Trans-Earth Coast bei ~17 126 km Höhe.
+        // Bahnparameter: e = 0.938, a = 103 973 km
+        // Perigee r_per = a·(1−e) ≈ 103 973 × 0.062 ≈ 6 446 km  (unter EMS ✓)
+        // r = 6_378_137 + 17_126_000 = 23_504_137 m
+        let r_mag = 6_378_137.0_f64 + 17_126_000.0;
+        let v_mag = 5_485.0_f64;
+        // γ ≈ −57° lokal (stark absteigende Bahn)
+        let gamma_local_rad = -57.0_f64 * core::f64::consts::PI / 180.0;
+        let r = Vec3::new(r_mag, 0.0, 0.0);
+        let v = Vec3::new(
+            v_mag * libm::sin(gamma_local_rad), // radiale Komponente (absteigend)
+            v_mag * libm::cos(gamma_local_rad), // along-track
+            0.0,
+        );
+        let sv = StateVector::new(r, v, Met::from_seconds(-3_600.0));
+        let body = CentralBody::Earth;
+        let mut alarm = AlarmState::new();
+
+        let result = compute_entry_display(&sv, &body, &mut alarm);
+        assert!(
+            result.is_some(),
+            "Apollo-11-Szenario muss Some liefern (kein Alarm)"
+        );
+        assert!(alarm.last().is_none(), "Kein Alarm bei Apollo-11-Szenario");
+
+        let d = result.unwrap();
+
+        // GAMMAEI: Eintrittswinkel bei 400k ft soll ≈ −6.5° sein (±2°)
+        assert!(
+            d.gamma_ei_deg >= -10.0 && d.gamma_ei_deg <= -4.0,
+            "GAMMAEI = {:.2}° soll im Bereich [−10°, −4°] liegen (Referenz: −6.5°)",
+            d.gamma_ei_deg
+        );
+
+        // VIO: Eintrittsgeschwindigkeit soll ≈ 10 500–11 200 m/s sein
+        assert!(
+            d.vio >= 10_000.0 && d.vio <= 11_500.0,
+            "VIO = {:.0} m/s soll im Bereich [10 000, 11 500] liegen",
+            d.vio
+        );
+
+        // GMAX: soll zwischen 2 und 15 g liegen (Apollo-11-Referenz: ≈ 6 g)
+        // Physikalisches Maximum für flachen Eintritt: ~12–14 g
+        assert!(
+            d.gmax >= 2.0 && d.gmax <= 15.0,
+            "GMAX = {:.2} g soll im Bereich [2, 15] liegen (Referenz: ≈ 6 g)",
+            d.gmax
+        );
+
+        // TTE: 60 min vor EI → ≈ 3600 s (±600 s)
+        assert!(
+            d.tte_s >= 2_000.0 && d.tte_s <= 6_000.0,
+            "TTE = {:.0} s soll im Bereich [2000, 6000] liegen (Referenz: 3600 s)",
+            d.tte_s
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 3: compute_entry_display — hyperbolische Bahn → Alarm
     // -----------------------------------------------------------------------
     #[test]
     fn entry_display_hyperbolic_gives_alarm() {

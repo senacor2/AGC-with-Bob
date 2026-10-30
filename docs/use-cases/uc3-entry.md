@@ -116,9 +116,13 @@ Tasteneingabe:
 **Erwartet**:
 | Register | Bedeutung | Einheit | Referenzwert Apollo 11 |
 |----------|-----------|---------|------------------------|
-| R1 | GMAX (max. Bremslast) | 0.01 m/s² | ≈ 3 400 (= 3.4 g) |
-| R2 | VPRED (Geschwindigkeit bei EI) | m/s | ≈ 10 900 |
-| R3 | GAMMAEI (Eintrittswinkel) | 0.01° | ≈ −650 (= −6.5°) |
+| R1 | GMAX (max. Bremslast) | 0.01 g | ≈ 600–1300 (= 6–13 g) |
+| R2 | VPRED (Geschwindigkeit bei EI) | ft/s | ≈ 36 200 |
+| R3 | GAMMAEI (Eintrittswinkel) | 0.01° | ≈ −650 (= −6.50°) |
+
+> **Hinweis zu GMAX**: Das AGC-Modell (GMAXCALC, `P61-P67.agc` Z. 808) enthält einen konstanten
+> Additionsterm von 10 g (KR3 = 1000 B-14). Der tatsächliche Peak bei Apollo 11 betrug ≈ 6.5 g;
+> GMAX-Vorhersagen im Bereich 6–14 g sind für γ ≈ −6.5° plausibel.
 
 ---
 
