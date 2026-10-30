@@ -35,8 +35,9 @@ use agc_core::display::verb_noun::{
     KEY_KEY_REL, KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
 };
 use agc_core::guidance::p40_47::p40_step;
+use agc_core::guidance::p61_67::{p61_step, p64_step, p67_step};
 use agc_core::hal::DskyHal;
-use agc_core::navigation::orbital::MOON_THRESHOLD_M;
+use agc_core::navigation::orbital::{CentralBody, MOON_THRESHOLD_M};
 use agc_physics::bodies::Body;
 use agc_physics::math::Vec3;
 use agc_physics::trajectory::{propagate, State, StepParams};
@@ -425,6 +426,98 @@ pub fn sim_tick(state: &mut SimState) {
                 &mut state.ctx.phase_table,
                 &mut state.ctx.alarms,
                 dt,
+            );
+        }
+    }
+
+    // --- Guidance: P61 — Entry-Anzeigedaten laufend aktualisieren ---
+    //
+    // p61_step berechnet GMAX/VPRED/GAMMAEI neu, solange Phase 2/3 aktiv ist.
+    // Nach Phase 0 (done) bleibt das letzte Ergebnis in p61.display stehen.
+    //
+    // AGC source: Comanche055/P61-P67.agc, S61.2-Schleife.
+    if state
+        .ctx
+        .guidance
+        .p61
+        .as_ref()
+        .is_some_and(|p| p.phase != 0)
+    {
+        if let Some(ref mut p61) = state.ctx.guidance.p61 {
+            let sv = state.ctx.current_sv;
+            let _ = p61_step(
+                p61,
+                &sv,
+                &CentralBody::Earth,
+                &mut state.ctx.phase_table,
+                &mut state.ctx.alarms,
+            );
+        }
+    }
+
+    // --- Guidance: P64 — Constant-Drag Rollsteuerung pro Tick ---
+    //
+    // p64_step berechnet Roll-Befehl und Drag-G-Last aus dem aktuellen SV.
+    // target_range_m: Großkreis-Näherung aus Splashdown-Koordinaten.
+    //
+    // AGC source: Comanche055/P61-P67.agc, P64-Programm, DANZIG-Label.
+    if state
+        .ctx
+        .guidance
+        .p64
+        .as_ref()
+        .is_some_and(|p| p.phase != 0)
+    {
+        let sv = state.ctx.current_sv;
+        let spl_lat = state.ctx.guidance.splashdown_lat;
+        let spl_lon = state.ctx.guidance.splashdown_lon;
+        // Großkreis-Abstand (Haversine) zwischen aktuellem Ort und Splashdown
+        let r = sv.position;
+        let r_mag = r.magnitude();
+        let lat_cur = (r.z / r_mag).asin();
+        let lon_cur = r.y.atan2(r.x);
+        let dlat = spl_lat - lat_cur;
+        let dlon = spl_lon - lon_cur;
+        let a =
+            (dlat * 0.5).sin().powi(2) + lat_cur.cos() * spl_lat.cos() * (dlon * 0.5).sin().powi(2);
+        let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+        let target_range_m = CentralBody::Earth.r_equatorial() * c;
+
+        if let Some(ref mut p64) = state.ctx.guidance.p64 {
+            let _ = p64_step(
+                p64,
+                &sv,
+                &CentralBody::Earth,
+                target_range_m,
+                &mut state.ctx.phase_table,
+                &mut state.ctx.alarms,
+            );
+        }
+    }
+
+    // --- Guidance: P67 — Terminal-Phase Reichweitenfehler pro Tick ---
+    //
+    // p67_step aktualisiert XRNGERR und DNRNGERR (Quer-/Längs-Reichweitenfehler).
+    //
+    // AGC source: Comanche055/P61-P67.agc, P67-Programm.
+    if state
+        .ctx
+        .guidance
+        .p67
+        .as_ref()
+        .is_some_and(|p| p.phase != 0)
+    {
+        let sv = state.ctx.current_sv;
+        let spl_lat = state.ctx.guidance.splashdown_lat;
+        let spl_lon = state.ctx.guidance.splashdown_lon;
+        if let Some(ref mut p67) = state.ctx.guidance.p67 {
+            let _ = p67_step(
+                p67,
+                &sv,
+                spl_lat,
+                spl_lon,
+                &mut state.ctx.phase_table,
+                &mut state.ctx.alarms,
             );
         }
     }
