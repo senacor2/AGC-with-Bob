@@ -135,12 +135,34 @@ Tasteneingabe:
 
 ---
 
-### Schritt 5: Warten auf P62/P63 (automatisch)
+### Schritt 5: P62 auslösen — PRO-Taste nach N63-Anzeige
 
-P62 und P63 folgen automatisch. PROG zeigt 62 dann 63.
-Die Simulation läuft weiter — kein V37-Eingriff nötig.
+P62 startet **nicht** zeitgesteuert, sondern durch einen expliziten
+**PROCEED** der Crew, nachdem P61 die N63-Anzeige (RTGO / VIO / TTE) angezeigt hat.
 
-**Beobachtung**: Nach ~55 Minuten Simulation-Zeit (bei EI − 5 min) zeigt PROG 63.
+**Wann**: Direkt nach Schritt 4, wenn N63 auf dem DSKY blinkt.
+
+**Eingabe**: `PRO` (= V33E)
+
+**Ablauf**:
+
+1. P61 zeigt N63 blinkend an (`RTGO`, `VIO`, `TTE`).
+2. Crew drückt **PRO** → `proceed_flag` wird gesetzt.
+3. `reentry_tick` erkennt: P61 aktiv + `proceed_flag` → PROG wechselt auf **62**.
+4. P62 fällt im selben Tick sofort auf **63** durch (kein IMU-Manöver in der Sim).
+5. PROG zeigt **63** — der AGC wartet nun auf .05G.
+
+> **Hinweis**: Im echten AGC hätte P62 Zeit für ein CM/SM-Trennungs-Manöver
+> (~10 min vor EI, ca. t = −600 s).  In der Simulation wird dieser Schritt
+> überbrückt; P62 → P63 erfolgt sofort.
+
+**Erwartet**:
+
+| Anzeige | Wert    |
+|---------|---------|
+| PROG    | 63      |
+
+Die Simulation läuft weiter — kein weiterer Eingriff nötig bis .05G (Schritt 6).
 
 ---
 

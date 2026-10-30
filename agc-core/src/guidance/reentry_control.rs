@@ -1,4 +1,4 @@
-//! Reentry-Programmverkettung — automatische Übergänge P63 → P64 → P67.
+//! Reentry-Programmverkettung — automatische Übergänge P61 → P62 → P63 → P64 → P67.
 //!
 //! Im echten AGC läuft die Verkettung über den **SERVICER/AVERAGE-G**-Zyklus
 //! (alle 2 s), der via `AVGEXIT` in `TARGETNG` → `SCALEPOP` → `GOTOADDR`
@@ -16,11 +16,13 @@
 //!
 //! | Von | Nach | Bedingung |
 //! |-----|------|-----------|
+//! | P61 | P62  | Crew drückt PRO auf N63-Flash (`proceed_flag`) |
+//! | P62 | P63  | sofort (FALL INTO P63, kein Wartezeit) |
 //! | P62/P63 | P64 | Drag D ≥ 0.05 g (`.05GSW` setzen) |
 //! | P64 | P67 | `p64_step` gibt `Some(false)` zurück (D > Q7 oder V < VFINAL) |
 //!
 //! # AGC-Quelle
-//! `Comanche055/P61-P67.agc`, P63–P67-Programme.
+//! `Comanche055/P61-P67.agc`, P61–P67-Programme.
 //! `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/PREDICT3/P67.1.
 //! `Comanche055/SERVICER207.agc`, AVGEXIT/READACCS-Zyklus.
 
@@ -41,19 +43,29 @@ use crate::navigation::orbital::CentralBody;
 /// 1. **P61-Aktualisierung**: Solange P61 aktiv ist, werden die Entry-Anzeigedaten
 ///    (GMAX, VPRED, GAMMAEI) laufend neu berechnet.
 ///
-/// 2. **P63 → P64** (.05G-Sensing): Wenn P62 oder P63 aktiv ist und die
+/// 2. **P61 → P62**: Wenn die Crew PRO drückt (`proceed_flag`), wechselt MODREG
+///    sofort auf 62.  Im AGC fällt P61 nach dem zweiten N63-PROCEED direkt in
+///    P62 durch (`.... THEN FALL INTO P62`, Zeile 162 in P61-P67.agc).
+///    AGC source: `Comanche055/P61-P67.agc`, P61.2-Label / FALL INTO P62.
+///
+/// 3. **P62 → P63**: P62 ist in dieser Simulation ein Momentanzustand (keine
+///    IMU-Neuausrichtung, kein CM/DAP).  MODREG wechselt sofort auf 63.
+///    Im AGC: `TC P63` am Ende von P62 wenn `CMDAPMOD` bereits -1 oder +0.
+///    AGC source: `Comanche055/P61-P67.agc`, P62.1-Label, letzter `TC P63`.
+///
+/// 4. **P63 → P64** (.05G-Sensing): Wenn P62 oder P63 aktiv ist und die
 ///    atmosphärische Bremsverzögerung 0.05 g überschreitet, wird P64
 ///    automatisch gestartet und MODREG auf 64 gesetzt.
 ///    AGC source: `Comanche055/REENTRY_CONTROL.agc`, `.05GSW`-Check in TARGETNG.
 ///
-/// 3. **P64-Tick**: Solange P64 aktiv ist, wird `p64_step` aufgerufen, der den
+/// 5. **P64-Tick**: Solange P64 aktiv ist, wird `p64_step` aufgerufen, der den
 ///    Roll-Befehl und die Drag-G-Last aktualisiert.
 ///
-/// 4. **P64 → P67**: Gibt `p64_step` `Some(false)` zurück (Übergang zu
+/// 6. **P64 → P67**: Gibt `p64_step` `Some(false)` zurück (Übergang zu
 ///    PREDICT3 / P67), wird P67 automatisch gestartet und MODREG auf 67 gesetzt.
 ///    AGC source: `Comanche055/P61-P67.agc`, P67 — "ENTER VIA RTB FROM REENTRY CONTROL".
 ///
-/// 5. **P67-Tick**: Solange P67 aktiv ist, werden XRNGERR und DNRNGERR
+/// 7. **P67-Tick**: Solange P67 aktiv ist, werden XRNGERR und DNRNGERR
 ///    laufend aktualisiert.
 ///
 /// # Parameter
@@ -82,7 +94,34 @@ pub fn reentry_tick(ctx: &mut AgcContext) {
     }
 
     // -----------------------------------------------------------------------
-    // 2. P63 → P64: .05G-Sensing.
+    // 2. P61 → P62: PRO-Taste (proceed_flag) löst Übergang aus.
+    //    Im AGC fällt P61 nach dem N63-PROCEED direkt in P62 durch.
+    //    proceed_flag wird vom Dispatcher bei V33 gesetzt und hier konsumiert.
+    //    AGC source: Comanche055/P61-P67.agc, P61.2-Label / "FALL INTO P62".
+    // -----------------------------------------------------------------------
+    if ctx.guidance.active_program == Some(61) && ctx.guidance.proceed_flag {
+        ctx.guidance.proceed_flag = false;
+        ctx.guidance.active_program = Some(62);
+        if let Some(mm) = MajorMode::new(62) {
+            ctx.display.major_mode = mm;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. P62 → P63: sofortiger Durchfall (kein Warten, kein IMU-Manöver
+    //    in dieser Simulation).  Im AGC: `TC P63` am Ende von P62.1 wenn
+    //    CMDAPMOD bereits im richtigen Zustand ist.
+    //    AGC source: Comanche055/P61-P67.agc, P62.1-Label, letzter `TC P63`.
+    // -----------------------------------------------------------------------
+    if ctx.guidance.active_program == Some(62) {
+        ctx.guidance.active_program = Some(63);
+        if let Some(mm) = MajorMode::new(63) {
+            ctx.display.major_mode = mm;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. P63 → P64: .05G-Sensing.
     //    Im AGC: SERVICER/TARGETNG prüft `.05GSW` nach jedem Average-G-Zyklus.
     //    Wenn D − 0.05G positiv: SET .05GSW → RTB zu P64 (NEWMODEX MM 64).
     //    Bedingung: aktives Programm ist 62 oder 63, P64 noch nicht aktiv.
@@ -101,7 +140,7 @@ pub fn reentry_tick(ctx: &mut AgcContext) {
     }
 
     // -----------------------------------------------------------------------
-    // 3. P64: Constant-Drag Rollsteuerung pro Tick.
+    // 5. P64: Constant-Drag Rollsteuerung pro Tick.
     //    Haversine-Großkreis-Abstand zwischen aktuellem Ort und Splashdown.
     //    AGC source: Comanche055/P61-P67.agc, DANZIG-Label.
     // -----------------------------------------------------------------------
@@ -139,7 +178,7 @@ pub fn reentry_tick(ctx: &mut AgcContext) {
     };
 
     // -----------------------------------------------------------------------
-    // 4. P64 → P67: automatischer Übergang wenn p64_step Some(false) zurückgibt.
+    // 6. P64 → P67: automatischer Übergang wenn p64_step Some(false) zurückgibt.
     //    Bedingung im AGC: PREDICT3-Phase aktiv (V < VFINAL oder D > Q7).
     //    AGC source: Comanche055/P61-P67.agc, P67 — "ENTER VIA RTB FROM REENTRY CONTROL".
     // -----------------------------------------------------------------------
@@ -152,7 +191,7 @@ pub fn reentry_tick(ctx: &mut AgcContext) {
     }
 
     // -----------------------------------------------------------------------
-    // 5. P67: Terminal-Phase — XRNGERR/DNRNGERR pro Tick aktualisieren.
+    // 7. P67: Terminal-Phase — XRNGERR/DNRNGERR pro Tick aktualisieren.
     //    AGC source: Comanche055/P61-P67.agc, P67-Programm.
     // -----------------------------------------------------------------------
     if ctx.guidance.p67.as_ref().is_some_and(|p| p.phase != 0) {
