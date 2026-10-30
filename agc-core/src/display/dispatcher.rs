@@ -22,7 +22,8 @@ use crate::context::AgcContext;
 use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
 use crate::guidance::p30_37::{p30_compute, P30Input};
-use crate::guidance::p40_47::{P40State, SPS_ISP, SPS_THRUST_N};
+use crate::guidance::p40_47::{p40_step, P40State, SPS_ISP, SPS_THRUST_N};
+use crate::hal::sps::NoopSps;
 use crate::navigation::orbital::{CentralBody, MOON_THRESHOLD_M};
 use crate::types::Vec3;
 
@@ -248,11 +249,13 @@ fn program_p37(ctx: &mut AgcContext) {
 ///
 /// Initialisiert [`P40State`] aus dem letzten P30-Output (delta_v_ref-Betrag)
 /// und der in `guidance.vehicle_mass_kg` hinterlegten Fahrzeugmasse.
+/// Trägt anschließend einen Waitlist-Task ein, der zum TIG-Zeitpunkt
+/// `p40_step()` (Phase 2→3: Zündung) aufruft.
 ///
 /// Wenn P30 noch nicht ausgeführt wurde (`ctx.guidance.p30 == None`), wird
 /// P40 ohne aktiven Burn-State gestartet — N40 zeigt dann weiterhin Blank.
 ///
-/// AGC source: `Comanche055/P40-P47.agc`, P40CALL / P40CSM.
+/// AGC source: `Comanche055/P40-P47.agc`, P40CALL / P40CSM / TIGBLNK / TIGNOW.
 fn program_p40(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(40);
 
@@ -267,6 +270,33 @@ fn program_p40(ctx: &mut AgcContext) {
                 SPS_THRUST_N,
                 ctx.guidance.vehicle_mass_kg,
             ));
+
+            // TIG-Delay berechnen: delta_cs = (tig_s - now_s) * 100
+            // Falls TIG vergangen oder nicht gesetzt → delay 1 cs (sofort nächsten Tick).
+            //
+            // AGC source: `Comanche055/P40-P47.agc`, TIGBLNK / TIGAVEG / TIGNOW.
+            let now_s = ctx.current_sv.time.as_seconds();
+            let tig_s = ctx.guidance.tig_s;
+            let delay_cs = if tig_s > now_s {
+                let raw = ((tig_s - now_s) * 100.0) as u32;
+                if raw == 0 {
+                    1
+                } else {
+                    raw
+                }
+            } else {
+                1
+            };
+
+            // Ignition-Task: wird zum TIG ausgeführt, ruft p40_step Phase 2→3 auf.
+            fn ignition_task(ctx: &mut crate::context::AgcContext) {
+                if let Some(ref mut p40) = ctx.guidance.p40 {
+                    let mut sps = NoopSps;
+                    let _ = p40_step(p40, &mut sps, &mut ctx.phase_table, &mut ctx.alarms, 0.0);
+                }
+            }
+
+            let _ = ctx.waitlist.call_after(delay_cs, ignition_task);
         }
     }
 

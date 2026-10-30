@@ -44,6 +44,26 @@ pub trait SpsHal {
 }
 
 // ---------------------------------------------------------------------------
+// No-op-Implementierung für Dispatcher-Tasks (kein Hardware-Zugriff nötig)
+// ---------------------------------------------------------------------------
+
+/// SPS-No-op-Implementierung für Dispatcher-Tasks und Embedded-Code.
+///
+/// Verwirft alle Befehle lautlos. Wird in `program_p40()` verwendet,
+/// wenn Phase 2→3 innerhalb eines Waitlist-Tasks ausgeführt wird und
+/// kein echter Hardware-HAL verfügbar ist.
+pub struct NoopSps;
+
+impl SpsHal for NoopSps {
+    fn set_tvc_pitch(&mut self, _command: i16) {}
+    fn set_tvc_yaw(&mut self, _command: i16) {}
+    fn set_engine(&mut self, _on: bool) {}
+    fn engine_on(&self) -> bool {
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Mock-Implementierung für Unit-Tests
 // ---------------------------------------------------------------------------
 

@@ -175,8 +175,12 @@ pub fn p40_step<S: SpsHal>(
             }
         }
         3 => {
-            // Phase 3: Burn läuft — Zeit akkumulieren, auf Cutoff warten.
+            // Phase 3: Burn läuft — Zeit akkumulieren, Δv aufaddieren, auf Cutoff warten.
             state.t_elapsed += dt;
+            // Δv-Akkumulation: a = F/m, dv = a * dt
+            if state.mass > 0.0 {
+                state.dv_accumulated += (state.thrust / state.mass) * dt;
+            }
             if state.t_elapsed >= state.t_burn {
                 state.phase = 4;
             }

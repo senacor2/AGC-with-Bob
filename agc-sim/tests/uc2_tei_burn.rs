@@ -362,17 +362,20 @@ fn uc2_n33_blank_when_no_tig() {
 }
 
 // ---------------------------------------------------------------------------
-// UC-2-J: TIG-Trigger — P40 startet automatisch wenn MET >= TIG
+// UC-2-J: P40 manuell starten — P40State wird angelegt
 // ---------------------------------------------------------------------------
 
+/// Prüft, dass P40 nach manuellem V37E40E (nach P30) den Laufzustand anlegt.
+/// Der TIG-Trigger lief früher automatisch im sim_loop; jetzt trägt program_p40()
+/// einen Waitlist-Task ein, der zum TIG zündet.
 #[test]
-fn uc2_tig_trigger_starts_p40() {
+fn uc2_p40_manual_start_creates_state() {
     use agc_core::navigation::state_vector::StateVector;
     use agc_core::types::{Met, Vec3};
 
     let mut state = test_utils::load_scenario_state(SCENARIO);
 
-    // current_sv auf MET 486 522 s setzen (15 min vor TIG)
+    // current_sv setzen
     let pos = state.traj.position;
     let vel = state.traj.velocity;
     state.ctx.current_sv = StateVector::new(
@@ -381,7 +384,7 @@ fn uc2_tig_trigger_starts_p40() {
         Met::from_seconds(486_522.0),
     );
 
-    // P30 + Δv vorbereiten, damit P40 einen State anlegen kann
+    // P30 + Δv vorbereiten
     state.ctx.guidance.delta_v_lv = [0.0, 905.0, 0.0];
     test_utils::press_keys(
         &mut state,
@@ -398,25 +401,114 @@ fn uc2_tig_trigger_starts_p40() {
         &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
     );
 
-    assert!(
-        state.ctx.guidance.p30.is_some(),
-        "P30 muss nach V37E30E Some sein"
+    assert!(state.ctx.guidance.p30.is_some(), "P30 muss Some sein");
+
+    // TIG etwas in der Zukunft setzen
+    state.ctx.guidance.tig_s = 486_522.0 + 10.0;
+
+    // P40 manuell starten
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_4, KEY_0, KEY_ENTER],
     );
-
-    // TIG setzen: exakt auf aktuelle MET → Trigger muss sofort feuern
-    let tig = 486_522.0_f64;
-    state.ctx.guidance.tig_s = tig;
-
-    // Einen sim_tick ausführen — der TIG-Trigger liegt im Tick
-    agc_sim::sim_loop::sim_tick(&mut state);
 
     assert!(
         state.ctx.guidance.p40.is_some(),
-        "P40 muss nach TIG-Erreichen automatisch gestartet sein (Some)"
+        "P40 muss nach V37E40E Some sein"
     );
     assert_eq!(
         state.ctx.guidance.active_program,
         Some(40),
-        "active_program muss 40 sein nach TIG-Trigger"
+        "active_program muss 40 sein"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// UC-2-K: DVTOTAL wächst während des Burns (Burn-Phase P40)
+// ---------------------------------------------------------------------------
+
+/// Prüft, dass nach dem Zünden von P40 das akkumulierte Δv (DVTOTAL) wächst.
+///
+/// Ablauf:
+/// 1. Szenario laden, current_sv auf MET=486_522 s setzen
+/// 2. delta_v_lv=[0,905,0] → P30 berechnen
+/// 3. TIG auf now+0.01 s setzen (1 cs in der Zukunft)
+/// 4. P40 manuell starten (V37E40E) → Waitlist-Task eingetragen mit delay=1 cs
+/// 5. tig_s auf now setzen (TIG = jetzt → delay_cs = 1 im nächsten call_after,
+///    aber der Task ist bereits eingetragen)
+/// 6. Genug sim_tick()-Aufrufe um Zündung (1 cs) + ~10 Ticks Burn auszulösen
+/// 7. dv_accumulated > 0.0 assertieren
+#[test]
+fn uc2_burn_dvtotal_grows() {
+    use agc_core::navigation::state_vector::StateVector;
+    use agc_core::types::{Met, Vec3};
+
+    let mut state = test_utils::load_scenario_state(SCENARIO);
+
+    // Schritt 1: current_sv auf MET=486_522 s setzen
+    let pos = state.traj.position;
+    let vel = state.traj.velocity;
+    state.ctx.current_sv = StateVector::new(
+        Vec3::new(pos.x, pos.y, pos.z),
+        Vec3::new(vel.x, vel.y, vel.z),
+        Met::from_seconds(486_522.0),
+    );
+
+    // Schritt 2: Δv setzen + P30 berechnen
+    state.ctx.guidance.delta_v_lv = [0.0, 905.0, 0.0];
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
+    );
+    // current_sv nochmal setzen (P30 braucht es beim zweiten Dispatch)
+    state.ctx.current_sv = StateVector::new(
+        Vec3::new(pos.x, pos.y, pos.z),
+        Vec3::new(vel.x, vel.y, vel.z),
+        Met::from_seconds(486_522.0),
+    );
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_3, KEY_0, KEY_ENTER],
+    );
+
+    assert!(state.ctx.guidance.p30.is_some(), "P30 muss Some sein");
+
+    // Schritt 3: TIG auf now+0.01 s (1 cs) setzen → delay_cs = 1
+    let now_s = state.ctx.current_sv.time.as_seconds();
+    state.ctx.guidance.tig_s = now_s + 0.01;
+
+    // Schritt 4: P40 starten (V37E40E) → trägt Waitlist-Task mit delay=1 cs ein
+    test_utils::press_keys(
+        &mut state,
+        &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_4, KEY_0, KEY_ENTER],
+    );
+
+    assert!(state.ctx.guidance.p40.is_some(), "P40 muss Some sein");
+    assert_eq!(
+        state.ctx.guidance.p40.as_ref().unwrap().phase,
+        2,
+        "P40 muss in Phase 2 starten"
+    );
+
+    // Schritt 5: tig_s auf now setzen → delay_cs war bereits 1 beim Eintragen,
+    //            der Task feuert nach 1 tick_with_ctx-Tick (= 1 sim_tick)
+    state.ctx.guidance.tig_s = now_s;
+
+    // Schritt 6: Genug Ticks ausführen (1 für Zündung + 15 für Burn)
+    for _ in 0..20 {
+        agc_sim::sim_loop::sim_tick(&mut state);
+    }
+
+    // Schritt 7: dv_accumulated > 0 prüfen
+    let p40 = state
+        .ctx
+        .guidance
+        .p40
+        .as_ref()
+        .expect("P40 muss nach dem Burn noch Some sein (oder Phase 0 wenn abgeschlossen)");
+    assert!(
+        p40.dv_accumulated > 0.0,
+        "DVTOTAL (dv_accumulated) muss nach dem Burn > 0 sein, war: {}",
+        p40.dv_accumulated
     );
 }

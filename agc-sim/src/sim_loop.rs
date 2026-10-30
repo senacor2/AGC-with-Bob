@@ -34,6 +34,7 @@ use agc_core::display::verb_noun::{
     KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_CLR, KEY_ENTER,
     KEY_KEY_REL, KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
 };
+use agc_core::guidance::p40_47::p40_step;
 use agc_core::hal::DskyHal;
 use agc_core::navigation::orbital::MOON_THRESHOLD_M;
 use agc_physics::bodies::Body;
@@ -402,28 +403,28 @@ pub fn sim_tick(state: &mut SimState) {
         }
     }
 
-    // --- TIG-Trigger: P40 automatisch zum Zündzeitpunkt starten ---
+    // --- Burn-Phase P40: wenn Phase 3 aktiv, p40_step pro Tick aufrufen ---
     //
-    // Wenn TIG gesetzt (tig_s > 0), P40 noch NICHT läuft (guidance.p40 == None),
-    // P30 einen gültigen Burn-Plan hat (guidance.p30 == Some) und die aktuelle MET
-    // den TIG erreicht hat → P40 starten wie V37E40E.
+    // Die Zündung (Phase 2→3) wird vom Waitlist-Task in program_p40() ausgelöst.
+    // Hier akkumulieren wir das Δv solange Phase 3 aktiv ist.
     //
-    // Das entspricht dem echten AGC-Verhalten: P40 wartet intern auf den TIG
-    // und löst die Zündsequenz aus, ohne weiteren Crew-Input.
-    //
-    // AGC source: Comanche055/P40-P47.agc, IGNITION / TIG-Vergleich in BURN-Schleife.
+    // AGC source: Comanche055/P40-P47.agc, BURN-Schleife in Phase 3.
+    if state
+        .ctx
+        .guidance
+        .p40
+        .as_ref()
+        .is_some_and(|p| p.phase == 3)
     {
-        let tig = state.ctx.guidance.tig_s;
-        let now = state.ctx.current_sv.time.as_seconds();
-        let p40_inactive = state.ctx.guidance.p40.is_none()
-            || state.ctx.guidance.p40.is_some_and(|p| p.phase == 0);
-        let p30_ready = state.ctx.guidance.p30.is_some();
-        if tig > 0.0 && now >= tig && p40_inactive && p30_ready {
-            #[expect(clippy::unwrap_used, reason = "40 und 0 sind garantiert gültige Codes")]
-            VerbDispatcher::dispatch(
-                agc_core::display::verb_noun::VerbCode::new(37).unwrap(),
-                agc_core::display::verb_noun::NounCode::new(40).unwrap(),
-                &mut state.ctx,
+        use agc_core::hal::sps::NoopSps;
+        if let Some(ref mut p40) = state.ctx.guidance.p40 {
+            let mut sps = NoopSps;
+            let _ = p40_step(
+                p40,
+                &mut sps,
+                &mut state.ctx.phase_table,
+                &mut state.ctx.alarms,
+                dt,
             );
         }
     }
