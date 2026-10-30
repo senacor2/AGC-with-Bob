@@ -30,9 +30,9 @@ pub fn render_digit(d: u8) -> SegChar {
             bot: "└─┘",
         },
         1 => SegChar {
-            top: "  │",
+            top: "  ╷",
             mid: "  │",
-            bot: "  │",
+            bot: "  ╵",
         },
         2 => SegChar {
             top: "┌─┐",
@@ -45,9 +45,9 @@ pub fn render_digit(d: u8) -> SegChar {
             bot: "└─┘",
         },
         4 => SegChar {
-            top: "│ │",
+            top: "╷ ╷",
             mid: "└─┤",
-            bot: "  │",
+            bot: "  ╵",
         },
         5 => SegChar {
             top: "┌─ ",
@@ -62,7 +62,7 @@ pub fn render_digit(d: u8) -> SegChar {
         7 => SegChar {
             top: "┌─┐",
             mid: "  │",
-            bot: "  │",
+            bot: "  ╵",
         },
         8 => SegChar {
             top: "┌─┐",
