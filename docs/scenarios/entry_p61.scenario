@@ -16,7 +16,9 @@
 # Perigee:     ~36 km (tief in Atmosphäre — Wiedereintritt findet statt)
 # Apogee:      ~201 531 km ≈ Mondabstand
 #
-# ─── Zustand bei t = −3600 s (EI − 60 min) ─────────────────────────────────
+# ─── Zustand bei MET 194:03:06 (EI − 60 min) ───────────────────────────────
+# MET EI:      195:03:06  = 702 186 s  (Apollo-11-Referenz, Comanche055)
+# MET hier:    194:03:06  = 698 586 s  (EI − 3 600 s)
 # Höhe:        17 126 km über WGS-84-Äquatorialradius (6 378 137 m)
 # |v|:         5 484.8 m/s (inertial, ECI)
 # γ_lok:       −56.9° (lokaler Flugpfadwinkel bei dieser Höhe)
@@ -45,4 +47,6 @@ pos_z_m  = 0.0
 vel_x_ms = 4189.3817
 vel_y_ms = 3540.1046
 vel_z_ms = 0.0
-time_s   = -3600.0
+# MET 194:03:06 = 194 × 3600 + 03 × 60 + 06 = 698 586 s
+# (Apollo-11 EI bei MET 195:03:06 = 702 186 s, minus 3 600 s)
+time_s   = 698586.0
