@@ -19,7 +19,7 @@ use crate::types::CduAngle;
 /// Erdbeschleunigung (Standard-Schwerkraft) [m/s²].
 ///
 /// Definition nach ISO 80000-3 / NIST.
-const G0: f64 = 9.806_65;
+pub const G0: f64 = 9.806_65;
 
 /// Berechnet Brenndauer und Endmasse für einen impulsiven Triebwerksbrand.
 ///

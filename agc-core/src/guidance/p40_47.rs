@@ -73,7 +73,7 @@ const GIMBAL_TEST_STEP: i16 = 84;
 /// | `delta_v_target`  | m/s      | Zielbetrag der Geschwindigkeitsänderung        |
 /// | `isp`             | s        | spez. Impuls des Triebwerks (SPS: 314.5 s)     |
 /// | `thrust`          | N        | Schub des Triebwerks (SPS: 97 855 N)           |
-/// | `mass`            | kg       | Startmasse vor dem Burn                        |
+/// | `mass`            | kg       | aktuelle Fahrzeugmasse — nimmt während Phase 3 ab |
 /// | `t_burn`          | s        | berechnete Brenndauer (aus Tsiolkovsky-Gl.)    |
 /// | `t_elapsed`       | s        | seit Ignition verstrichene Zeit                |
 ///
@@ -89,7 +89,8 @@ pub struct P40State {
     pub isp: f64,
     /// Triebwerksschub [N].
     pub thrust: f64,
-    /// Fahrzeugmasse vor dem Burn [kg].
+    /// Aktuelle Fahrzeugmasse [kg] — Startmasse in Phase 2; nimmt in Phase 3 durch
+    /// Treibstoffverbrauch ab: `dm/dt = −thrust / (isp × g₀)`.
     pub mass: f64,
     /// Berechnete Brenndauer [s] — 0.0 bis Phase 2 abgeschlossen.
     pub t_burn: f64,
@@ -175,11 +176,23 @@ pub fn p40_step<S: SpsHal>(
             }
         }
         3 => {
-            // Phase 3: Burn läuft — Zeit akkumulieren, Δv aufaddieren, auf Cutoff warten.
+            // Phase 3: Burn läuft — Zeit akkumulieren, Masse abbauen, Δv aufaddieren,
+            // auf Cutoff warten.
+            //
+            // Massenstrom: dm/dt = −F / (Isp · g₀)
+            // Beschleunigung: a(t) = F / m(t)   → korrekte Tsiolkovsky-Integration
+            // Die Masse wird pro Schritt reduziert; dadurch wächst dv_accumulated bis
+            // genau zum Ziel-Δv, statt auf den zu niedrigen Wert (F/m₀) · t_burn.
             state.t_elapsed += dt;
-            // Δv-Akkumulation: a = F/m, dv = a * dt
             if state.mass > 0.0 {
-                state.dv_accumulated += (state.thrust / state.mass) * dt;
+                let g0 = crate::navigation::powered_flight::G0;
+                let mdot = state.thrust / (state.isp * g0); // kg/s
+                let dm = mdot * dt;
+                let new_mass = (state.mass - dm).max(1.0); // Untergrenze: 1 kg (kein div-by-zero)
+                                                           // Mittlere Masse im Intervall (Trapezregel) für genauere dv-Integration
+                let mass_avg = 0.5 * (state.mass + new_mass);
+                state.dv_accumulated += (state.thrust / mass_avg) * dt;
+                state.mass = new_mass;
             }
             if state.t_elapsed >= state.t_burn {
                 state.phase = 4;
@@ -592,5 +605,52 @@ mod tests {
         let r = p47_step(&mut state, &mut pt, &mut alarm);
         let dv = r.unwrap();
         assert!(dv.abs() < 1e-12, "Kein Restfehler erwartet, bekam {dv}");
+    }
+
+    // -----------------------------------------------------------------------
+    // DVTOTAL-Akkumulation
+    // -----------------------------------------------------------------------
+
+    /// DVTOTAL muss nach vollständigem Burn nahe am Ziel-Δv liegen.
+    ///
+    /// Fehler-Ursache (behoben): Vorher wurde `(F/m₀) × t_burn` akkumuliert,
+    /// was bei konstanter Startmasse nur ~784 m/s für ein 905 m/s-Ziel ergab.
+    /// Nach dem Fix wird die Masse pro Zeitschritt reduziert (Tsiolkovsky-Integration),
+    /// sodass DVTOTAL das Ziel-Δv korrekt erreicht.
+    ///
+    /// Toleranz 1 %: Numerischer Integrationsfehler bei dt = 1 s über ~230 Schritte.
+    #[test]
+    fn p40_dvtotal_matches_target() {
+        const DV_TARGET: f64 = 905.0;
+        const MASS: f64 = 28_802.0;
+        let mut state = P40State::new(DV_TARGET, SPS_ISP, SPS_THRUST_N, MASS);
+        let mut sps = MockSps::new();
+        let mut pt = PhaseTable::new();
+        let mut alarm = AlarmState::new();
+
+        // Phase 2: Ignition
+        p40_step(&mut state, &mut sps, &mut pt, &mut alarm, 0.0);
+        let t_burn = state.t_burn;
+
+        // Phase 3: Burn in 1-Sekunden-Schritten bis Cutoff
+        let dt = 1.0_f64;
+        let max_steps = (t_burn / dt).ceil() as u32 + 2;
+        for _ in 0..max_steps {
+            if state.phase != 3 {
+                break;
+            }
+            p40_step(&mut state, &mut sps, &mut pt, &mut alarm, dt);
+        }
+        // Phase 4 abschließen
+        if state.phase == 4 {
+            p40_step(&mut state, &mut sps, &mut pt, &mut alarm, 0.0);
+        }
+
+        let dv = state.dv_accumulated;
+        let error_pct = ((dv - DV_TARGET) / DV_TARGET).abs() * 100.0;
+        assert!(
+            error_pct < 1.0,
+            "DVTOTAL soll innerhalb 1 % von {DV_TARGET} m/s liegen, bekam {dv:.2} m/s ({error_pct:.2} %)"
+        );
     }
 }
