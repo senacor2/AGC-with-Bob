@@ -526,20 +526,40 @@ impl Default for P64State {
 /// AGC: 0.05 g Schwellwert für Entry-Einleitung.
 const ENTRY_05G_THRESHOLD: f64 = 0.05;
 
-/// AGC: Q7 — Drag-Schwelle für Up-Control Übergang [g₀].
-const Q7_THRESHOLD: f64 = 0.2;
+/// AGC: Q7F — fester Ausgangswert von Q7 [g₀].
+///
+/// Q7F = 6/805 in AGC-Skalierung (805 = 25 g₀ × 32.174 ft/s²).
+/// Q7 ist anfangs gleich Q7F; wird in HUNTEST dynamisch auf Basis von VL neu berechnet.
+///
+/// AGC source: `Comanche055/REENTRY_CONTROL.agc`, Q7F-Konstante (Z. 1522).
+const Q7F_THRESHOLD: f64 = 6.0 / (25.0 * 32.174 * 0.3048); // ≈ 0.0246 g₀  (6 ft/s²)
+
+/// AGC: Q7F + KDMIN — Drag-Schwelle für P66 → P67 (PREFINAL) [g₀].
+///
+/// Q7FKDMIN = 6.5/805 ≙ 6.5 ft/s² — wenn Drag diesen Wert überschreitet,
+/// verlässt P66 die Ballistik- und wechselt in die finale Steuerungsphase.
+///
+/// AGC source: `Comanche055/REENTRY_CONTROL.agc`, Q7FKDMIN-Konstante (Z. 1512).
+const Q7F_KDMIN_THRESHOLD: f64 = 6.5 / (25.0 * 32.174 * 0.3048); // ≈ 0.0267 g₀
+
+/// Reichweiten-Schwelle für P64 → P65-Übergang (GOTOUPSY): 25 Nautische Meilen [m].
+///
+/// AGC source: `Comanche055/REENTRY_CONTROL.agc`, 25NM-Konstante (Z. 1545).
+const UPCONTROL_RANGE_THRESHOLD_M: f64 = 25.0 * 1_852.0; // 25 NM × 1852 m/NM
 
 /// Führt einen P64-Schritt aus (Constant-Drag Entry).
 ///
 /// Berechnet den Roll-Befehl aus der aktuellen Drag-G-Last und der
 /// Reichweiten-Abweichung (vereinfachtes Constant-Drag-Modell).
 ///
-/// # Rückgabe
+/// # Übergänge
 /// - `Some(true)`:  Weiter in P64.
-/// - `Some(false)`: Übergang zu P65 (wenn D < Q7 oder Up-Control-Bedingung erfüllt).
-/// - `None`:         Alarm.
+/// - `Some(false)`: Übergang zu P65 (wenn Restreichweite < 25 NM) oder
+///   zu P66 (wenn D < Q7 in UPCONTRL-Phase).
+/// - `None`:         interner Fehler (Phase-Table).
 ///
-/// AGC source: `Comanche055/P61-P67.agc`, P64-Programm, DANZIG-Label.
+/// AGC source: `Comanche055/P61-P67.agc`, P64-Programm, DANZIG-Label;
+///             `Comanche055/REENTRY_CONTROL.agc`, GOTOUPSY / KEP-Label.
 pub fn p64_step(
     state: &mut P64State,
     sv: &StateVector,
@@ -561,8 +581,7 @@ pub fn p64_step(
             // bereits während der Abstiegsphase einen sinnvollen Wert zeigen.
             // AGC source: Comanche055/P61-P67.agc, DANZIG label — BETA-Berechnung
             // erfolgt unabhängig vom .05G-Check.
-            let r_mag = sv.position.magnitude();
-            let alt = r_mag - body.r_equatorial();
+            let alt = sv.position.magnitude() - body.r_equatorial();
             // Vereinfachte Reichweiten-Schätzung: alt × L/D × 2
             let est_range_m = alt.abs() * L_OVER_D * 2.0;
             let range_err_m = target_range_m - est_range_m;
@@ -575,10 +594,21 @@ pub fn p64_step(
                 return Some(true);
             }
 
-            // Übergang zu P65, wenn D > Q7
-            if d_g > Q7_THRESHOLD {
+            // Übergang zu P65 (GOTOUPSY), wenn Restreichweite < 25 NM.
+            // AGC source: Comanche055/REENTRY_CONTROL.agc, Z. 734–737
+            //             (ABS DSU 25NM BMN GOTOUPSY).
+            if range_err_m.abs() < UPCONTROL_RANGE_THRESHOLD_M {
                 state.phase = 3;
                 return Some(false); // → P65
+            }
+
+            // Übergang zu P66 (KEP), wenn D < Q7 (Luftwiderstand zu gering für
+            // Rollsteuerung in der UPCONTRL-Phase).
+            // AGC source: Comanche055/REENTRY_CONTROL.agc, Z. 895–897
+            //             (DSU Q7 BMN KEP).
+            if d_g < Q7F_THRESHOLD {
+                state.phase = 3;
+                return Some(false); // → P66 (Caller-Sequenzer prüft range_err_m)
             }
 
             Some(true)
@@ -588,6 +618,167 @@ pub fn p64_step(
             pt.set_phase(5, 0)?;
             state.phase = 0;
             Some(false)
+        }
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P65State — Up-Control Phase
+// ---------------------------------------------------------------------------
+
+/// Laufzustand von P65 — Up-Control Phase (Reichweite < 25 NM vom Ziel).
+///
+/// P65 schaltet GOTOADDR auf UPCONTRL und zeigt N69 (ROLLC / DL / VL).
+/// Die Rollsteuerung bleibt aktiv; der HUNTEST-Zyklus prüft weiterhin Q7.
+///
+/// AGC source: `Comanche055/P61-P67.agc`, P65-Programm.
+#[derive(Copy, Clone, Debug)]
+pub struct P65State {
+    /// Aktuelle Phase (2 = Up-Control aktiv, 0 = done).
+    pub phase: u8,
+    /// Roll-Befehl [deg] (ROLLC).
+    pub roll_cmd_deg: f64,
+    /// Aktuelle Drag-G-Last [g₀] (DL).
+    pub drag_g_current: f64,
+}
+
+impl P65State {
+    /// Neuer P65-Zustand.
+    pub fn new() -> Self {
+        Self {
+            phase: 2,
+            roll_cmd_deg: 0.0,
+            drag_g_current: 0.0,
+        }
+    }
+}
+
+impl Default for P65State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Führt einen P65-Schritt aus (Up-Control Phase).
+///
+/// Hält Rollsteuerung in der Endphase aufrecht (Reichweite < 25 NM).
+/// Übergang zu P66, wenn D < Q7 (Luftwiderstand fällt unter Schwellwert).
+/// Übergang direkt zu P67, wenn RDOT > 0 und V < VL (Fahrzeug steigt wieder).
+///
+/// # Übergänge
+/// - `Some(true)`:  Weiter in P65.
+/// - `Some(false)`: Übergang zu P66 (D < Q7) oder P67 (direkter Skip).
+/// - `None`:         interner Fehler.
+///
+/// AGC source: `Comanche055/P61-P67.agc`, P65-Programm;
+///             `Comanche055/REENTRY_CONTROL.agc`, UPCONTRL-Label (Z. 882–900).
+pub fn p65_step(
+    state: &mut P65State,
+    sv: &StateVector,
+    body: &CentralBody,
+    target_range_m: f64,
+    pt: &mut PhaseTable,
+    _alarm: &mut AlarmState,
+) -> Option<bool> {
+    match state.phase {
+        2 => {
+            pt.set_phase(5, 2)?;
+            let d_g = drag_g(sv, body);
+            state.drag_g_current = d_g;
+
+            // Roll-Befehl aus Reichweiten-Fehler (wie P64).
+            // AGC source: Comanche055/REENTRY_CONTROL.agc, UPCONTRL-Abschnitt.
+            let alt = sv.position.magnitude() - body.r_equatorial();
+            let est_range_m = alt.abs() * L_OVER_D * 2.0;
+            let range_err_m = target_range_m - est_range_m;
+            state.roll_cmd_deg = if range_err_m > 0.0 { 90.0 } else { 0.0 };
+
+            // Übergang zu P66 (KEP), wenn D < Q7.
+            // AGC source: Comanche055/REENTRY_CONTROL.agc, Z. 895–897.
+            if d_g < Q7F_THRESHOLD {
+                state.phase = 0;
+                return Some(false); // → P66
+            }
+
+            Some(true)
+        }
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P66State — Ballistic / Trim Phase
+// ---------------------------------------------------------------------------
+
+/// Laufzustand von P66 — Ballistische Trimmphase (D < Q7).
+///
+/// P66 hält das CM ohne aktive Rollbefehle in Trim-Lage zur Relativgeschwindigkeit
+/// (Gimbal-Winkel aus N22: OGA / IGA / MGA). Sobald D wieder Q7 + KDMIN überschreitet,
+/// wechselt die Entry-Guidance in P67 (PREFINAL / PREDICT3).
+///
+/// AGC source: `Comanche055/P61-P67.agc`, P66-Programm;
+///             `Comanche055/REENTRY_CONTROL.agc`, KEP / KEP2-Label (Z. 1098–1121).
+#[derive(Copy, Clone, Debug)]
+pub struct P66State {
+    /// Aktuelle Phase (2 = Trim aktiv, 0 = done).
+    pub phase: u8,
+    /// Aktuell gemessene Drag-G-Last [g₀].
+    pub drag_g_current: f64,
+    /// Letzter gehaltener Roll-Befehl [deg] (ROLLHOLD — aus P64/P65 übernommen).
+    pub roll_hold_deg: f64,
+}
+
+impl P66State {
+    /// Neuer P66-Zustand, mit initialem Roll-Hold-Wert aus P64/P65.
+    pub fn new(roll_hold_deg: f64) -> Self {
+        Self {
+            phase: 2,
+            drag_g_current: 0.0,
+            roll_hold_deg,
+        }
+    }
+}
+
+impl Default for P66State {
+    fn default() -> Self {
+        Self::new(0.0)
+    }
+}
+
+/// Führt einen P66-Schritt aus (Ballistische Trimmphase).
+///
+/// Beobachtet den Drag. Sobald D > Q7F + KDMIN (= 6.5 ft/s²) steigt P66 in P67 auf.
+///
+/// # Übergänge
+/// - `Some(true)`:  Weiter in P66 (D noch unter Schwellwert).
+/// - `Some(false)`: Übergang zu P67 (D ≥ Q7F + KDMIN).
+/// - `None`:         interner Fehler.
+///
+/// AGC source: `Comanche055/REENTRY_CONTROL.agc`, KEP2-Label (Z. 1107–1121);
+///             `Comanche055/P61-P67.agc`, P66-Programm (Z. 444).
+pub fn p66_step(
+    state: &mut P66State,
+    sv: &StateVector,
+    body: &CentralBody,
+    pt: &mut PhaseTable,
+    _alarm: &mut AlarmState,
+) -> Option<bool> {
+    match state.phase {
+        2 => {
+            pt.set_phase(5, 2)?;
+            let d_g = drag_g(sv, body);
+            state.drag_g_current = d_g;
+
+            // Übergang zu P67 (PREFINAL), wenn D > Q7F + KDMIN.
+            // AGC source: Comanche055/REENTRY_CONTROL.agc, Z. 1107–1110
+            //             (DLOAD DSU Q7FKDMIN D BMN PREFINAL).
+            if d_g > Q7F_KDMIN_THRESHOLD {
+                state.phase = 0;
+                return Some(false); // → P67
+            }
+
+            Some(true)
         }
         _ => None,
     }
@@ -956,5 +1147,112 @@ mod tests {
         // Bei 70 km und 7 km/s: Drag sollte > 0 und < 20 g sein
         assert!(d > 0.0, "Drag soll > 0 in dichter Atmosphäre");
         assert!(d < 20.0, "Drag soll < 20 g bei 70 km");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 8: p65_step — D ≥ Q7 → bleibt in P65
+    // -----------------------------------------------------------------------
+    #[test]
+    fn p65_step_above_q7_stays_in_p65() {
+        // Zustandsvektor bei 65 km Höhe, v = 7 500 m/s
+        // → dichter Bereich, Drag sollte > Q7F_THRESHOLD (≈ 0.025 g) sein
+        let alt = 65_000.0_f64;
+        let r = CentralBody::Earth.r_equatorial() + alt;
+        let sv = StateVector::new(
+            Vec3::new(r, 0.0, 0.0),
+            Vec3::new(0.0, 7_500.0, 0.0),
+            Met::from_seconds(0.0),
+        );
+        let body = CentralBody::Earth;
+        let d = drag_g(&sv, &body);
+        // Voraussetzung: Drag muss für diesen Test über Q7F liegen
+        if d <= Q7F_THRESHOLD {
+            // Physikalisch nicht in diesem Höhenbereich bei 7,5 km/s — skip
+            return;
+        }
+        let mut state = P65State::new();
+        let mut pt = PhaseTable::new();
+        let mut alarm = AlarmState::new();
+        let result = p65_step(&mut state, &sv, &body, 500_000.0, &mut pt, &mut alarm);
+        assert_eq!(result, Some(true), "P65 soll bei D > Q7 weiterlaufen");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 9: p65_step — D < Q7 → Übergang zu P66
+    // -----------------------------------------------------------------------
+    #[test]
+    fn p65_step_below_q7_transitions_to_p66() {
+        // Sehr hoher Orbit → praktisch kein Drag → D < Q7F
+        let sv = StateVector::new(
+            Vec3::new(6_700_000.0, 0.0, 0.0),
+            Vec3::new(0.0, 7_800.0, 0.0),
+            Met::from_seconds(0.0),
+        );
+        let body = CentralBody::Earth;
+        let mut state = P65State::new();
+        let mut pt = PhaseTable::new();
+        let mut alarm = AlarmState::new();
+        let result = p65_step(&mut state, &sv, &body, 500_000.0, &mut pt, &mut alarm);
+        assert_eq!(result, Some(false), "P65 soll bei D < Q7 zu P66 wechseln");
+        assert_eq!(state.phase, 0, "P65 phase soll 0 (done) sein");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 10: p66_step — D ≤ Q7F+KDMIN → bleibt in P66
+    // -----------------------------------------------------------------------
+    #[test]
+    fn p66_step_low_drag_stays_in_p66() {
+        // Sehr hoher Orbit → Drag ≈ 0 < Q7F_KDMIN_THRESHOLD
+        let sv = StateVector::new(
+            Vec3::new(6_700_000.0, 0.0, 0.0),
+            Vec3::new(0.0, 7_800.0, 0.0),
+            Met::from_seconds(0.0),
+        );
+        let body = CentralBody::Earth;
+        let mut state = P66State::new(45.0);
+        let mut pt = PhaseTable::new();
+        let mut alarm = AlarmState::new();
+        let result = p66_step(&mut state, &sv, &body, &mut pt, &mut alarm);
+        assert_eq!(
+            result,
+            Some(true),
+            "P66 soll bei D < Q7F+KDMIN weiterlaufen"
+        );
+        // Roll-Hold-Wert darf nicht verändert werden
+        assert!(
+            (state.roll_hold_deg - 45.0).abs() < f64::EPSILON,
+            "roll_hold_deg soll unverändert bleiben"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 11: p66_step — D > Q7F+KDMIN → Übergang zu P67
+    // -----------------------------------------------------------------------
+    #[test]
+    fn p66_step_high_drag_transitions_to_p67() {
+        // 60 km Höhe, v = 8 000 m/s → sehr dichter Bereich, Drag > Q7F_KDMIN
+        let alt = 60_000.0_f64;
+        let r = CentralBody::Earth.r_equatorial() + alt;
+        let sv = StateVector::new(
+            Vec3::new(r, 0.0, 0.0),
+            Vec3::new(0.0, 8_000.0, 0.0),
+            Met::from_seconds(0.0),
+        );
+        let body = CentralBody::Earth;
+        let d = drag_g(&sv, &body);
+        // Voraussetzung prüfen
+        if d <= Q7F_KDMIN_THRESHOLD {
+            return; // Physikalisch unerwartet; Test überspringen statt fälschen
+        }
+        let mut state = P66State::new(0.0);
+        let mut pt = PhaseTable::new();
+        let mut alarm = AlarmState::new();
+        let result = p66_step(&mut state, &sv, &body, &mut pt, &mut alarm);
+        assert_eq!(
+            result,
+            Some(false),
+            "P66 soll bei D > Q7F+KDMIN zu P67 wechseln"
+        );
+        assert_eq!(state.phase, 0, "P66 phase soll 0 (done) sein");
     }
 }

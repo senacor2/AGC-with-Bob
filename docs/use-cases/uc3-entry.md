@@ -1,8 +1,8 @@
-# UC-3: Entry (P61 → P64 → P67)
+# UC-3: Entry (P61 → P64 → P65 → P66 → P67)
 
-**Szenario**: `docs/scenarios/entry_p61.scenario` (Trans-Earth Coast, EI − 60 min, Apollo-11-Referenz)  
-**Integrationstest**: `agc-sim/tests/uc3_entry.rs`  
-**Programme**: P61 (Entry Preparation), P64 (Constant-Drag Phase), P67 (Terminal Phase)
+**Szenario**: `docs/scenarios/entry_p61.scenario` (Trans-Earth Coast, EI − 60 min, Apollo-11-Referenz)
+**Integrationstest**: `agc-sim/tests/uc3_entry.rs`
+**Programme**: P61 (Entry Preparation), P64 (Constant-Drag Phase), P65 (Up-Control), P66 (Trim/Ballistik), P67 (Terminal Phase)
 
 ---
 
@@ -20,13 +20,15 @@ Der Ablauf aus AGC-Sicht:
 | **P62** | Automatisch | Folgt auf P61 nach PROCEED |
 | **P63** | Automatisch | Folgt auf P62; hält Entry-Lage bis .05G |
 | **P64** | **Automatisch** | Wenn Bremsverzögerung ≥ 0.05 g (~90 s nach EI) |
-| **P67** | **Automatisch** | Wenn V < 27 000 fps (~8 230 m/s) beim .2g-Punkt |
+| **P65** | **Automatisch** | Wenn Restreichweite < 25 NM zum Ziel (GOTOUPSY) |
+| **P66** | **Automatisch** | Wenn D < Q7 (≈ 6 ft/s²) in UPCONTRL-Phase (KEP) |
+| **P67** | **Automatisch** | Wenn D > Q7F+KDMIN (≈ 6.5 ft/s²) in P66 (PREFINAL) |
 
-> **Wichtig**: Die Crew startet **nur P61** per V37. P62, P63, P64 und P67
+> **Wichtig**: Die Crew startet **nur P61** per V37. P62–P67
 > werden vom AGC-internen SERVICER/REENTRY_CONTROL-Zyklus automatisch ausgelöst —
 > analog zu `NEWMODEX`-Aufrufen via RTB in `REENTRY_CONTROL.agc`.
 >
-> AGC source: `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/PREDICT3.
+> AGC source: `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/GOTOUPSY/UPCONTRL/KEP/PREFINAL/PREDICT3.
 
 ---
 
@@ -63,7 +65,9 @@ Das Szenario startet **60 Minuten vor dem Entry Interface**:
 | t ≈ −600 s (EI − 10 min) | CM/SM-Separation (P62) | PRO-Taste |
 | **t = 0 (EI)** | Entry Interface | P63 aktiv, 122 km |
 | t ≈ +90 s | .05G → **P64 automatisch** | (kein Eingriff) |
-| t ≈ +10–15 min | V < 27 000 fps → **P67 automatisch** | (kein Eingriff) |
+| t ≈ +10 min | Restreichweite < 25 NM → **P65 automatisch** | (kein Eingriff) |
+| t ≈ +10–12 min | D < Q7 → **P66 automatisch** (Trim) | (kein Eingriff) |
+| t ≈ +12–15 min | D > Q7+0.5 → **P67 automatisch** | (kein Eingriff) |
 | t ≈ +15 min | V ≤ 1 000 fps, Fallschirm | P67 fertig |
 
 ---
@@ -203,9 +207,55 @@ Rollsteuerung beobachten:
 
 ---
 
-### Schritt 8: P67 — Terminal Phase (automatisch)
+### Schritt 8: P65 — Up-Control Phase (automatisch)
 
-P67 startet **automatisch** aus P64. PROG zeigt 67.
+P65 startet **automatisch** aus P64, sobald die geschätzte Restreichweite
+zum Splashdown-Punkt unter **25 NM** fällt (GOTOUPSY-Sprung in `REENTRY_CONTROL.agc`).
+
+PROG zeigt **65**. Anzeige N69 weiterhin nutzbar:
+
+**Eingabe**: `V16N69E`
+
+| Register | Bedeutung | Einheit |
+|----------|-----------|---------|
+| R1 | ROLLC (Roll-Kommando) | 0.01° |
+| R2 | DL (Drag-Level, Q7) | 0.01 m/s² |
+| R3 | VL (Zielgeschwindigkeit) | m/s |
+
+> **Hinweis**: Die Rollsteuerung bleibt in P65 aktiv. HUNTEST überwacht
+> weiterhin D gegenüber Q7. Fällt D unter Q7 (≈ 6 ft/s²), wechselt P65
+> automatisch in P66.
+
+---
+
+### Schritt 9: P66 — Ballistische Trimmphase (automatisch)
+
+P66 startet **automatisch** aus P65, wenn D unter Q7 fällt (KEP-Sprung in
+`REENTRY_CONTROL.agc`). Dies tritt typischerweise auf, wenn das CM kurz
+die dichte Atmosphäre verlässt (Skip-out) oder vor dem erneuten
+Eintauchpunkt.
+
+PROG zeigt **66**. Gimbal-Winkel-Anzeige (N22):
+
+**Eingabe**: `V06N22E`
+
+| Register | Bedeutung | Einheit |
+|----------|-----------|---------|
+| R1 | OGA (Outer Gimbal Angle) | 0.01° |
+| R2 | IGA (Inner Gimbal Angle) | 0.01° |
+| R3 | MGA (Middle Gimbal Angle) | 0.01° |
+
+> **Hinweis**: In P66 werden **keine Roll-Kommandos** mehr erzeugt —
+> das CM trimmt sich nur zur Relativgeschwindigkeit. Der letzte Roll-Befehl
+> aus P65 (ROLLHOLD) wird eingefroren. Sobald D wieder über Q7 + 0.5 ft/s²
+> (≈ 6.5 ft/s²) steigt, wechselt P66 automatisch in P67 (PREFINAL).
+
+---
+
+### Schritt 10: P67 — Terminal Phase (automatisch)
+
+P67 startet **automatisch** aus P66 (oder direkt aus P65 bei Skip-out).
+PROG zeigt **67**.
 
 **Eingabe**: `V16N67E`
 
@@ -217,7 +267,7 @@ P67 startet **automatisch** aus P64. PROG zeigt 67.
 
 ---
 
-### Schritt 9: Guidance-Fehler-Monitor (V16 N66)
+### Schritt 11: Guidance-Fehler-Monitor (V16 N66)
 
 **Eingabe**: `V16N66E`
 
@@ -233,8 +283,8 @@ Monitor-Modus (1× pro Sekunde aktualisiert):
 
 ## Quellen
 
-- `Comanche055/P61-P67.agc`, P61/P62/P63/P64/P67-Programme
-- `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/PREDICT3/P67.1
+- `Comanche055/P61-P67.agc`, P61/P62/P63/P64/P65/P66/P67-Programme
+- `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/GOTOUPSY/UPCONTRL/KEP/KEP2/PREFINAL/PREDICT3/P67.1
 - `Comanche055/SERVICER207.agc`, AVGEXIT/READACCS-Zyklus (alle 2 s)
 - `Comanche055/PINBALL_NOUN_TABLES.agc`, N60, N61, N63, N66, N67, N69, N74
 - `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, N61
