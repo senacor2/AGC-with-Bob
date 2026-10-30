@@ -23,7 +23,7 @@ use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
 use crate::guidance::p30_37::{p30_compute, P30Input};
 use crate::guidance::p40_47::{p40_step, P40State, SPS_ISP, SPS_THRUST_N};
-use crate::guidance::p61_67::{P61State, P64State, P67State};
+use crate::guidance::p61_67::{compute_entry_display, P61State, P64State, P67State};
 use crate::hal::sps::NoopSps;
 use crate::navigation::orbital::{CentralBody, MOON_THRESHOLD_M};
 use crate::types::Vec3;
@@ -322,17 +322,22 @@ fn program_p52(ctx: &mut AgcContext) {
 
 /// P61 — Entry Preparation.
 ///
-/// Initialisiert P61State mit den aktuellen Splashdown-Koordinaten aus
-/// `ctx.guidance`, damit N60/N63 sofort Werte anzeigen können.
+/// Initialisiert P61State und berechnet sofort die Entry-Anzeigedaten
+/// (S61.2-Äquivalent), damit N60/N63 bei V06 direkt Werte liefern.
+/// P61 ist immer ein Erdwiedereinritt → `CentralBody::Earth`.
 ///
-/// AGC source: `Comanche055/P61-P67.agc`, P61CALL.
+/// AGC source: `Comanche055/P61-P67.agc`, P61CALL / S61.2.
 fn program_p61(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(61);
-    ctx.guidance.p61 = Some(P61State::new(
+    let mut state = P61State::new(
         ctx.guidance.splashdown_lat,
         ctx.guidance.splashdown_lon,
         ctx.guidance.heads_up,
-    ));
+    );
+    // S61.2: Entry-Anzeigedaten sofort berechnen, damit N60/N63 nicht Blank zeigen.
+    // AGC source: `Comanche055/P61-P67.agc`, S61.2-Subroutine.
+    state.display = compute_entry_display(&ctx.current_sv, &CentralBody::Earth, &mut ctx.alarms);
+    ctx.guidance.p61 = Some(state);
     ctx.exec.schedule(GUIDANCE_PRIORITY, program_noop_fn);
 }
 
@@ -897,6 +902,39 @@ mod tests {
         assert!(
             !ctx.display.lights.verb_noun_flash,
             "VERB/NOUN FLASH nach V37 aus"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 4b: V37N61E mit gültigem Entry-SV → p61.display wird sofort berechnet
+    // -----------------------------------------------------------------------
+    #[test]
+    fn v37n61_p61_display_computed_on_start() {
+        use crate::navigation::state_vector::StateVector;
+        use crate::types::{Met, Vec3};
+
+        let mut ctx = AgcContext::default();
+
+        // Entry-Interface-Zustandsvektor: ~122 km Höhe, Geschwindigkeit 10 900 m/s,
+        // Abstiegswinkel −6.5° (Apollo-11-Referenz).
+        // r = R_erde + 122 km ≈ 6 500 000 m
+        let r_ei = 6_500_000.0_f64;
+        let v_ei = 10_900.0_f64;
+        let gamma_rad = (-6.5_f64).to_radians();
+        // Zustandsvektor im ECI (vereinfacht: radial + tangential)
+        let r_vec = Vec3::new(r_ei, 0.0, 0.0);
+        let vr = v_ei * gamma_rad.sin(); // radiale Komponente (negativ = absinkend)
+        let vt = v_ei * gamma_rad.cos(); // tangentiale Komponente
+        let v_vec = Vec3::new(vr, vt, 0.0);
+        ctx.current_sv = StateVector::new(r_vec, v_vec, Met::from_seconds(0.0));
+
+        VerbDispatcher::dispatch(verb(37), noun(61), &mut ctx);
+
+        // p61 muss initialisiert sein und display darf nicht None sein
+        let p61 = ctx.guidance.p61.expect("p61 muss nach V37N61 gesetzt sein");
+        assert!(
+            p61.display.is_some(),
+            "p61.display muss nach program_p61 berechnet sein (N60 darf nicht Blank zeigen)"
         );
     }
 
