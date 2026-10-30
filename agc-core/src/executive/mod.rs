@@ -118,6 +118,8 @@ impl Default for Executive {
 #[cfg(test)]
 mod tests {
     use super::{Executive, Waitlist};
+    use crate::context::AgcContext;
+    use crate::executive::waitlist::tick_with_ctx;
     use core::sync::atomic::{AtomicU32, Ordering};
 
     static ORDER: AtomicU32 = AtomicU32::new(0);
@@ -135,7 +137,7 @@ mod tests {
 
     static WL_FIRED: AtomicU32 = AtomicU32::new(0);
 
-    fn wl_task() {
+    fn wl_task(_ctx: &mut AgcContext) {
         WL_FIRED.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -168,13 +170,16 @@ mod tests {
 
         wl.call_after(3, wl_task).unwrap();
 
-        wl.tick(2);
+        let mut ctx = AgcContext::default();
+        ctx.waitlist = wl;
+
+        tick_with_ctx(&mut ctx, 2);
         assert_eq!(WL_FIRED.load(Ordering::Relaxed), 0);
 
-        wl.tick(1);
+        tick_with_ctx(&mut ctx, 1);
         assert_eq!(WL_FIRED.load(Ordering::Relaxed), 1);
 
-        assert_eq!(wl.count(), 0);
+        assert_eq!(ctx.waitlist.count(), 0);
     }
 
     #[test]

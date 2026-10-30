@@ -25,6 +25,10 @@
 //! die Liste um eine Stelle verschoben. Ist `delays[0]` ebenfalls 0, werden
 //! weitere Tasks direkt gefeuert (entspricht `RUPTAGN`-Verhalten im AGC).
 //!
+//! Für Tasks die auf den [`crate::context::AgcContext`] zugreifen müssen, steht
+//! die freie Funktion [`tick_with_ctx`] bereit (verwendet `core::mem::take`-Pattern
+//! um Borrow-Konflikte zu vermeiden).
+//!
 //! ## Einschränkungen
 //!
 //! - Kein Heap: feste Arrays mit `MAX_TASKS`-Einträgen.
@@ -48,10 +52,10 @@ pub const MAX_TASKS: usize = 9;
 pub const MAX_DELAY_CS: u32 = 16_250;
 
 /// Ein einzelner Warteeintrag.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct WaitEntry {
     /// Funktionszeiger. `None` = Slot leer.
-    pub task_fn: Option<fn()>,
+    pub task_fn: Option<fn(&mut crate::context::AgcContext)>,
 }
 
 impl WaitEntry {
@@ -83,6 +87,7 @@ impl Default for WaitEntry {
 /// - `tasks[i]`: Task an Position i der sortierten Liste.
 ///
 /// AGC source: `Comanche055/WAITLIST.agc`, `LST1`/`LST2` memory layout (pp. 1221–1222).
+#[derive(Debug)]
 pub struct Waitlist {
     /// Anzahl aktiver Einträge.
     count: usize,
@@ -110,7 +115,7 @@ impl Waitlist {
     ///
     /// - `delay_cs`: 1–[`MAX_DELAY_CS`]. Wert 0 wird auf 1 aufgerundet.
     ///   Werte > [`MAX_DELAY_CS`] werden auf [`MAX_DELAY_CS`] begrenzt.
-    /// - `task_fn`: aufzurufende Funktion.
+    /// - `task_fn`: aufzurufende Funktion — erhält `&mut AgcContext`.
     ///
     /// Gibt `Some(())` bei Erfolg, `None` wenn die Warteschlange voll ist.
     ///
@@ -119,7 +124,11 @@ impl Waitlist {
     /// - `delays[i]` = Delta zwischen Task i und Task i+1 (für i < count−1)
     ///
     /// AGC source: `Comanche055/WAITLIST.agc`, `WAITLIST`/`WTLST2`/`WTLST4`/`WTLST5` routines.
-    pub fn call_after(&mut self, delay_cs: u32, task_fn: fn()) -> Option<()> {
+    pub fn call_after(
+        &mut self,
+        delay_cs: u32,
+        task_fn: fn(&mut crate::context::AgcContext),
+    ) -> Option<()> {
         if self.count >= MAX_TASKS {
             return None;
         }
@@ -197,86 +206,6 @@ impl Waitlist {
         Some(())
     }
 
-    /// Verarbeitet einen Timer-Tick (entspricht T3RUPT).
-    ///
-    /// - `ticks`: Anzahl der vergangenen Zentisekunden (üblicherweise 1).
-    ///
-    /// Alle Tasks, deren Deadline abgelaufen ist, werden **synchron** ausgeführt
-    /// und aus der Liste entfernt. Zurückgegeben wird die Anzahl ausgeführter Tasks.
-    ///
-    /// AGC source: `Comanche055/WAITLIST.agc`, `T3RUPT`/`T3RUPT2`/`TASKOVER` routines (pp. 1231–1232).
-    pub fn tick(&mut self, ticks: u32) -> usize {
-        if self.count == 0 {
-            return 0;
-        }
-
-        let mut fired = 0;
-
-        // Ticks von time_to_first abziehen.
-        // Saturierender Subtraktionsschutz: time_to_first kann nicht unter 0 fallen.
-        if ticks >= self.time_to_first {
-            // remaining_ticks = überschüssige Ticks nach dem ersten fälligen Task.
-            let mut remaining_ticks = ticks.saturating_sub(self.time_to_first);
-            self.time_to_first = 0;
-
-            // Alle fälligen Tasks feuern (entspricht RUPTAGN-Schleife in T3RUPT2).
-            // Die Schleife fährt fort solange:
-            //   - noch Tasks vorhanden sind UND
-            //   - der nächste Task jetzt fällig ist (time_to_first == 0)
-            loop {
-                if self.count == 0 {
-                    break;
-                }
-                if self.time_to_first != 0 {
-                    break;
-                }
-
-                // Task 0 extrahieren und Delta zum Nachfolger VOR dem Shift lesen.
-                // (T3RUPT2-Verhalten: LST1/LST2-Inhalte hochschieben.)
-                let f = self.tasks[0].task_fn;
-                // Das Delta von Task 0 zu Task 1 steht in delays[0] — VOR dem Shift.
-                let delta_to_next = self.delays[0];
-
-                // Liste nach vorne schieben
-                self.count -= 1;
-                for i in 0..self.count {
-                    self.tasks[i] = self.tasks[i + 1];
-                    self.delays[i] = self.delays[i + 1];
-                }
-                self.tasks[self.count] = WaitEntry::empty();
-                self.delays[self.count] = 0;
-
-                // Nächsten time_to_first berechnen:
-                // delta_to_next = Abstand vom gerade gefeuerten Task zum neuen Task 0.
-                if self.count > 0 {
-                    if remaining_ticks >= delta_to_next {
-                        remaining_ticks = remaining_ticks.saturating_sub(delta_to_next);
-                        self.time_to_first = 0; // nächster auch fällig
-                    } else {
-                        self.time_to_first = delta_to_next.saturating_sub(remaining_ticks);
-                        remaining_ticks = 0;
-                    }
-                }
-
-                // Task ausführen NACH der Listenmanipulation, damit der Task selbst
-                // neue Einträge hinzufügen kann — analog zum AGC-Verhalten.
-                if let Some(job) = f {
-                    job();
-                }
-                fired += 1;
-            }
-
-            // Falls noch Ticks übrig und nächster Task noch nicht fällig:
-            if self.count > 0 && remaining_ticks > 0 {
-                self.time_to_first = self.time_to_first.saturating_sub(remaining_ticks);
-            }
-        } else {
-            self.time_to_first -= ticks;
-        }
-
-        fired
-    }
-
     /// Anzahl aktuell wartender Tasks.
     pub fn count(&self) -> usize {
         self.count
@@ -299,12 +228,116 @@ impl Default for Waitlist {
 }
 
 // ---------------------------------------------------------------------------
+// tick_with_ctx — freie Funktion mit mem::take-Pattern
+// ---------------------------------------------------------------------------
+
+/// Verarbeitet `ticks` Zentisekunden gegen die Waitlist in `ctx`.
+///
+/// Diese freie Funktion ersetzt [`Waitlist::tick`] für alle Kontexte, in denen
+/// Task-Funktionen auf [`crate::context::AgcContext`] zugreifen müssen (z. B.
+/// um sich selbst via `ctx.waitlist.call_after(...)` neu einzuplanen).
+///
+/// ## Borrow-Strategie (mem::take-Pattern)
+///
+/// 1. Die Waitlist wird via `core::mem::take` aus `ctx.waitlist` herausgenommen
+///    — `ctx.waitlist` ist danach leer (Default).
+/// 2. Zeitberechnung und Listenmanipulation finden auf der lokalen `wl` statt.
+/// 3. Fällige Task-Funktionszeiger werden zunächst in ein lokales Array
+///    `fired_fns` gesammelt, bevor Tasks ausgeführt werden.
+/// 4. Nicht-fällige Resteinträge werden in `ctx.waitlist` zurückgeschrieben.
+/// 5. Fällige Tasks werden nacheinander mit `f(ctx)` aufgerufen. Tasks, die
+///    sich selbst neu einplanen, schreiben in das jetzt leere (bzw. bereits
+///    teilweise befüllte) `ctx.waitlist`.
+///
+/// Nach dem Durchlauf enthält `ctx.waitlist` die nicht-fälligen Resteinträge
+/// plus alle neu eingetragenen Tasks (z. B. selbst-wiederholende Monitor-Tasks).
+///
+/// AGC source: `Comanche055/WAITLIST.agc`, `T3RUPT`/`T3RUPT2`/`TASKOVER` routines.
+pub fn tick_with_ctx(ctx: &mut crate::context::AgcContext, ticks: u32) -> usize {
+    // Schnellpfad: Waitlist leer
+    if ctx.waitlist.count == 0 {
+        return 0;
+    }
+
+    // ① Waitlist herausnehmen — ctx.waitlist ist danach Default (leer)
+    let mut wl = core::mem::take(&mut ctx.waitlist);
+
+    let mut fired_fns = [None::<fn(&mut crate::context::AgcContext)>; MAX_TASKS];
+    let mut fired_count = 0;
+
+    if ticks >= wl.time_to_first {
+        let mut remaining_ticks = ticks.saturating_sub(wl.time_to_first);
+        wl.time_to_first = 0;
+
+        // Alle fälligen Tasks sammeln (analog T3RUPT2/RUPTAGN-Schleife)
+        loop {
+            if wl.count == 0 {
+                break;
+            }
+            if wl.time_to_first != 0 {
+                break;
+            }
+
+            // Task 0 extrahieren und Delta zum Nachfolger lesen (vor Shift)
+            let f = wl.tasks[0].task_fn;
+            let delta_to_next = wl.delays[0];
+
+            // Liste nach vorne schieben
+            wl.count -= 1;
+            for i in 0..wl.count {
+                wl.tasks[i] = wl.tasks[i + 1];
+                wl.delays[i] = wl.delays[i + 1];
+            }
+            wl.tasks[wl.count] = WaitEntry::empty();
+            wl.delays[wl.count] = 0;
+
+            // Nächsten time_to_first berechnen
+            if wl.count > 0 {
+                if remaining_ticks >= delta_to_next {
+                    remaining_ticks = remaining_ticks.saturating_sub(delta_to_next);
+                    wl.time_to_first = 0;
+                } else {
+                    wl.time_to_first = delta_to_next.saturating_sub(remaining_ticks);
+                    remaining_ticks = 0;
+                }
+            }
+
+            // Funktionszeiger merken (noch nicht aufrufen)
+            if fired_count < MAX_TASKS {
+                fired_fns[fired_count] = f;
+                fired_count += 1;
+            }
+        }
+
+        // Falls noch Ticks übrig und nächster Task noch nicht fällig
+        if wl.count > 0 && remaining_ticks > 0 {
+            wl.time_to_first = wl.time_to_first.saturating_sub(remaining_ticks);
+        }
+    } else {
+        wl.time_to_first -= ticks;
+    }
+
+    // ③ Verbleibende nicht-fällige Einträge zurückschreiben
+    ctx.waitlist = wl;
+
+    // ④ Fällige Tasks mit &mut ctx aufrufen.
+    //    Tasks, die call_after() aufrufen, schreiben in ctx.waitlist
+    //    (das jetzt die nicht-fälligen Resteinträge enthält).
+    for f in fired_fns.iter().take(fired_count).flatten() {
+        f(ctx);
+    }
+
+    fired_count
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    use super::{Waitlist, MAX_TASKS};
+    use super::{tick_with_ctx, Waitlist, MAX_TASKS};
+    use crate::context::AgcContext;
     use core::sync::atomic::{AtomicU32, Ordering};
 
     // Atomare Zähler für Task-Ausführungsnachweis
@@ -312,13 +345,13 @@ mod tests {
     static COUNTER_B: AtomicU32 = AtomicU32::new(0);
     static COUNTER_C: AtomicU32 = AtomicU32::new(0);
 
-    fn task_a() {
+    fn task_a(_ctx: &mut AgcContext) {
         COUNTER_A.fetch_add(1, Ordering::Relaxed);
     }
-    fn task_b() {
+    fn task_b(_ctx: &mut AgcContext) {
         COUNTER_B.fetch_add(1, Ordering::Relaxed);
     }
-    fn task_c() {
+    fn task_c(_ctx: &mut AgcContext) {
         COUNTER_C.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -326,6 +359,12 @@ mod tests {
         COUNTER_A.store(0, Ordering::Relaxed);
         COUNTER_B.store(0, Ordering::Relaxed);
         COUNTER_C.store(0, Ordering::Relaxed);
+    }
+
+    fn ctx_with_waitlist(wl: Waitlist) -> AgcContext {
+        let mut ctx = AgcContext::default();
+        ctx.waitlist = wl;
+        ctx
     }
 
     #[test]
@@ -344,17 +383,19 @@ mod tests {
         assert_eq!(w.count(), 1);
         assert_eq!(w.time_to_next(), Some(5));
 
+        let mut ctx = ctx_with_waitlist(w);
+
         // 4 Ticks — noch nicht fällig
-        let fired = w.tick(4);
+        let fired = tick_with_ctx(&mut ctx, 4);
         assert_eq!(fired, 0);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 0);
-        assert_eq!(w.time_to_next(), Some(1));
+        assert_eq!(ctx.waitlist.time_to_next(), Some(1));
 
         // 1 letzter Tick — fällig
-        let fired = w.tick(1);
+        let fired = tick_with_ctx(&mut ctx, 1);
         assert_eq!(fired, 1);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
-        assert_eq!(w.count(), 0);
+        assert_eq!(ctx.waitlist.count(), 0);
     }
 
     #[test]
@@ -362,7 +403,8 @@ mod tests {
         reset_counters();
         let mut w = Waitlist::new();
         w.call_after(10, task_a).unwrap();
-        let fired = w.tick(10);
+        let mut ctx = ctx_with_waitlist(w);
+        let fired = tick_with_ctx(&mut ctx, 10);
         assert_eq!(fired, 1);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
     }
@@ -372,10 +414,11 @@ mod tests {
         reset_counters();
         let mut w = Waitlist::new();
         w.call_after(3, task_a).unwrap();
-        let fired = w.tick(100);
+        let mut ctx = ctx_with_waitlist(w);
+        let fired = tick_with_ctx(&mut ctx, 100);
         assert_eq!(fired, 1);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
-        assert_eq!(w.count(), 0);
+        assert_eq!(ctx.waitlist.count(), 0);
     }
 
     #[test]
@@ -387,14 +430,16 @@ mod tests {
         w.call_after(10, task_a).unwrap();
         w.call_after(20, task_b).unwrap();
 
+        let mut ctx = ctx_with_waitlist(w);
+
         // Nach 10 Ticks: nur task_a feuert
-        let fired = w.tick(10);
+        let fired = tick_with_ctx(&mut ctx, 10);
         assert_eq!(fired, 1);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
         assert_eq!(COUNTER_B.load(Ordering::Relaxed), 0);
 
         // Nach weiteren 10 Ticks: task_b feuert
-        let fired = w.tick(10);
+        let fired = tick_with_ctx(&mut ctx, 10);
         assert_eq!(fired, 1);
         assert_eq!(COUNTER_B.load(Ordering::Relaxed), 1);
     }
@@ -410,7 +455,8 @@ mod tests {
 
         assert_eq!(w.time_to_next(), Some(5));
 
-        let fired = w.tick(5);
+        let mut ctx = ctx_with_waitlist(w);
+        let fired = tick_with_ctx(&mut ctx, 5);
         assert_eq!(fired, 1);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
         assert_eq!(COUNTER_B.load(Ordering::Relaxed), 0);
@@ -440,7 +486,8 @@ mod tests {
         w.call_after(5, task_a).unwrap();
         w.call_after(5, task_b).unwrap();
 
-        let fired = w.tick(5);
+        let mut ctx = ctx_with_waitlist(w);
+        let fired = tick_with_ctx(&mut ctx, 5);
         // Beide sollen feuern
         assert_eq!(fired, 2);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
@@ -455,17 +502,46 @@ mod tests {
         w.call_after(6, task_b).unwrap();
         w.call_after(9, task_c).unwrap();
 
-        w.tick(3);
+        let mut ctx = ctx_with_waitlist(w);
+
+        tick_with_ctx(&mut ctx, 3);
         assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
         assert_eq!(COUNTER_B.load(Ordering::Relaxed), 0);
         assert_eq!(COUNTER_C.load(Ordering::Relaxed), 0);
 
-        w.tick(3);
+        tick_with_ctx(&mut ctx, 3);
         assert_eq!(COUNTER_B.load(Ordering::Relaxed), 1);
         assert_eq!(COUNTER_C.load(Ordering::Relaxed), 0);
 
-        w.tick(3);
+        tick_with_ctx(&mut ctx, 3);
         assert_eq!(COUNTER_C.load(Ordering::Relaxed), 1);
-        assert_eq!(w.count(), 0);
+        assert_eq!(ctx.waitlist.count(), 0);
+    }
+
+    /// Prüft das self-rescheduling-Pattern: Ein Task trägt sich in `ctx.waitlist`
+    /// selbst wieder ein. Nach zwei Tick-Zyklen muss er zweimal gefeuert haben.
+    #[test]
+    fn self_rescheduling_task() {
+        reset_counters();
+
+        fn repeating(_ctx: &mut AgcContext) {
+            COUNTER_A.fetch_add(1, Ordering::Relaxed);
+            // Sich selbst nach 5 cs wieder einplanen
+            let _ = _ctx.waitlist.call_after(5, repeating);
+        }
+
+        let mut ctx = AgcContext::default();
+        ctx.waitlist.call_after(5, repeating).unwrap();
+
+        // Erster Feuerzyklus nach 5 cs
+        tick_with_ctx(&mut ctx, 5);
+        assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
+        // Task hat sich selbst wieder eingetragen
+        assert_eq!(ctx.waitlist.count(), 1);
+
+        // Zweiter Feuerzyklus nach weiteren 5 cs
+        tick_with_ctx(&mut ctx, 5);
+        assert_eq!(COUNTER_A.load(Ordering::Relaxed), 2);
+        assert_eq!(ctx.waitlist.count(), 1);
     }
 }

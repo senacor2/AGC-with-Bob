@@ -29,7 +29,6 @@ use agc_core::alarm::AlarmState;
 use agc_core::context::AgcContext;
 use agc_core::display::dispatcher::VerbDispatcher;
 use agc_core::display::input::process_v25_key;
-use agc_core::display::noun_resolver;
 use agc_core::display::verb_noun::{
     process_key, t4rupt_tick, write_to_dsky, InputBuffer, InputMode, KeyCode as AgcKey, KeyEvent,
     KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_CLR, KEY_ENTER,
@@ -207,16 +206,11 @@ pub fn sim_tick(state: &mut SimState) {
     // --- T4RUPT ---
     t4rupt_tick(&mut state.ctx.display);
 
-    // --- Monitor-Modus (V16): NounResolver 1x pro Sekunde aufrufen ---
-    // 1 Hz = 100 Ticks à 10 ms, entspricht AGC MONITOR-Zyklus.
-    // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MONITOR label.
-    if state.ctx.display.verb.val() == 16 && state.tick.is_multiple_of(100) {
-        let noun = state.ctx.display.noun;
-        let [r1, r2, r3] = noun_resolver::resolve(noun, &state.ctx);
-        state.ctx.display.r1 = r1;
-        state.ctx.display.r2 = r2;
-        state.ctx.display.r3 = r3;
-    }
+    // --- Waitlist-Tick (T3RUPT-Äquivalent): fällige Tasks ausführen ---
+    // V16-Monitor-Aktualisierung läuft jetzt als selbst-wiederholender Waitlist-Task
+    // in agc-core (eingetragen im V16-Dispatcher-Handler via monitor_task).
+    // AGC source: Comanche055/WAITLIST.agc, T3RUPT routine.
+    agc_core::executive::waitlist::tick_with_ctx(&mut state.ctx, 1);
 
     write_to_dsky(&state.ctx.display, &mut state.dsky);
 

@@ -11,6 +11,7 @@
 use crate::alarm::AlarmState;
 use crate::display::input::InputLoadState;
 use crate::display::verb_noun::DisplayState;
+use crate::executive::waitlist::Waitlist;
 use crate::executive::Executive;
 use crate::guidance::p30_37::P30Output;
 use crate::guidance::p37_70::P37EmState;
@@ -276,4 +277,15 @@ pub struct AgcContext {
     /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`,
     /// ENTPAS / STOREDAT.
     pub load_state: InputLoadState,
+
+    /// Zeitgesteuerte Warteschlange (Waitlist) für verzögerte Tasks.
+    ///
+    /// Analog zu LST1/LST2 im AGC — verwaltet bis zu
+    /// [`crate::executive::waitlist::MAX_TASKS`] Tasks, die nach einer
+    /// Verzögerung in Zentisekunden ausgeführt werden. Task-Funktionen erhalten
+    /// `&mut AgcContext` und können sich selbst via `ctx.waitlist.call_after(...)`
+    /// erneut einplanen (selbst-wiederholendes Pattern für Monitor-Tasks).
+    ///
+    /// AGC source: `Comanche055/WAITLIST.agc`, LST1/LST2 memory layout.
+    pub waitlist: Waitlist,
 }

@@ -109,6 +109,27 @@ pub enum VerbAction {
 }
 
 // ---------------------------------------------------------------------------
+// Monitor-Task (V16 — selbst-wiederholend via Waitlist)
+// ---------------------------------------------------------------------------
+
+/// Waitlist-Task für den V16-Monitor: aktualisiert R1/R2/R3 und plant sich
+/// selbst nach 100 cs (= 1 Sekunde) erneut ein.
+///
+/// Muss als freie `fn`-Funktion (kein Closure) definiert sein, damit sie als
+/// `fn(&mut AgcContext)` in die Waitlist eingetragen werden kann.
+///
+/// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, MONITOR label.
+fn monitor_task(ctx: &mut AgcContext) {
+    let noun = ctx.display.noun;
+    let [r1, r2, r3] = noun_resolver::resolve(noun, ctx);
+    ctx.display.r1 = r1;
+    ctx.display.r2 = r2;
+    ctx.display.r3 = r3;
+    // Nächste Aktualisierung in 100 cs einplanen (selbst-wiederholend)
+    let _ = ctx.waitlist.call_after(100, monitor_task);
+}
+
+// ---------------------------------------------------------------------------
 // Statische Verb-Tabelle V00–V39 (VERBTAB)
 // ---------------------------------------------------------------------------
 
@@ -423,7 +444,7 @@ impl VerbDispatcher {
                 ctx.display.r3 = r3;
             }
 
-            // V16: Monitor-Anzeige (zyklische Aktualisierung per T4RUPT)
+            // V16: Monitor-Anzeige (zyklische Aktualisierung per Waitlist-Task)
             // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MONITOR label.
             VerbAction::MonitorDisplay => {
                 // Kein Blinken während Monitor läuft
@@ -436,6 +457,10 @@ impl VerbDispatcher {
                 ctx.display.r1 = r1;
                 ctx.display.r2 = r2;
                 ctx.display.r3 = r3;
+
+                // Selbst-wiederholenden Monitor-Task in Waitlist eintragen (100 cs = 1 s).
+                // AGC source: Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, MONITOR label.
+                let _ = ctx.waitlist.call_after(100, monitor_task);
             }
 
             // V25: Load-Daten — VERB/NOUN-Blinken starten (Eingabeaufforderung)
@@ -1163,6 +1188,76 @@ mod tests {
         assert!(
             !ctx.display.flash_state,
             "accept_load N93 muss Flash stoppen"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: V16/N40 Monitor-Task via Waitlist
+    // -----------------------------------------------------------------------
+
+    /// V16 N40 dispatchen, 100× `tick_with_ctx` aufrufen — Display muss danach
+    /// aktualisiert worden sein (r1 ≠ Blank, weil P40-State vorhanden ist).
+    ///
+    /// Prüft, dass der selbst-wiederholende Waitlist-Monitor-Task korrekt
+    /// eingetragen wird und nach 100 cs feuert.
+    #[test]
+    fn v16_monitor_task_fires_after_100_ticks() {
+        use crate::executive::waitlist::tick_with_ctx;
+        use crate::guidance::p40_47::{P40State, SPS_ISP, SPS_THRUST_N};
+
+        let mut ctx = AgcContext::default();
+
+        // P40-State vorbelegen (damit N40 etwas liefert statt Blank)
+        ctx.guidance.p40 = Some(P40State::new(100.0, SPS_ISP, SPS_THRUST_N, 28_800.0));
+
+        // V16/N40 dispatchen — trägt monitor_task nach 100 cs in Waitlist ein
+        VerbDispatcher::dispatch(verb(16), noun(40), &mut ctx);
+
+        // Nach dem Dispatch ist r1/r2/r3 sofort gesetzt (erster Wert),
+        // und ein Waitlist-Task wurde eingetragen.
+        assert_eq!(ctx.waitlist.count(), 1);
+        assert_eq!(ctx.waitlist.time_to_next(), Some(100));
+
+        // R1 direkt nach dispatch prüfen (Sofort-Update)
+        assert_ne!(
+            ctx.display.r1,
+            DisplayRegister::Blank,
+            "V16/N40 dispatch muss R1 sofort befüllen"
+        );
+
+        // R1 auf Blank zurücksetzen, um den Waitlist-Tick zu testen
+        ctx.display.r1 = DisplayRegister::Blank;
+        ctx.display.r2 = DisplayRegister::Blank;
+        ctx.display.r3 = DisplayRegister::Blank;
+
+        // 99 Ticks — noch nicht fällig
+        for _ in 0..99 {
+            tick_with_ctx(&mut ctx, 1);
+        }
+        assert_eq!(
+            ctx.display.r1,
+            DisplayRegister::Blank,
+            "Nach 99 Ticks darf der Monitor-Task noch nicht gefeuert haben"
+        );
+
+        // 100. Tick — Task feuert, Display muss aktualisiert sein
+        tick_with_ctx(&mut ctx, 1);
+        assert_ne!(
+            ctx.display.r1,
+            DisplayRegister::Blank,
+            "Nach 100 Ticks muss der Monitor-Task R1 befüllt haben"
+        );
+
+        // Monitor hat sich selbst wieder eingetragen (selbst-wiederholend)
+        assert_eq!(
+            ctx.waitlist.count(),
+            1,
+            "Monitor-Task muss sich selbst für den nächsten Zyklus eingetragen haben"
+        );
+        assert_eq!(
+            ctx.waitlist.time_to_next(),
+            Some(100),
+            "Nächste Monitor-Aktualisierung in 100 cs"
         );
     }
 }
