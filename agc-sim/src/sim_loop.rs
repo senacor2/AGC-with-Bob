@@ -219,17 +219,17 @@ pub fn sim_tick(state: &mut SimState) {
     // SimDsky implementiert DskyHal — read_keycode() leert den FIFO.
     while let Some(raw) = state.dsky.read_keycode() {
         if let Some(agc_key) = AgcKey::new(raw) {
-            // V25-Dateneingabe-Modus: Im Flash-Modus mit V25 und einem Noun der
-            // keine spezielle Behandlung hat (nicht N22/N93), delegieren wir an
-            // process_v25_key() in agc-core.
+            // V25-Dateneingabe-Modus: Im Flash-Modus mit V25 (alle Nouns, auch N22/N93),
+            // solange kein Verb/Noun-Eingabemodus aktiv ist (input_buf.mode == Idle).
+            // Damit bleiben VERB 3 4 ENTER (Terminate) und ähnliche Sequenzen
+            // korrekt als Verb-Eingaben erkennbar, statt als Datenwerte abgefangen.
             //
             // Erlaubt Werte ±99999 (5 Ziffern), kompatibel mit AGC XREG/YREG/ZREG.
             //
             // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, ENTPAS / STOREDAT.
             let v25_data_mode = state.ctx.display.flash_state
                 && state.ctx.display.verb.val() == 25
-                && !matches!(state.ctx.display.noun.val(), 22 | 93);
-
+                && state.input_buf.mode == InputMode::Idle;
             if v25_data_mode && process_v25_key(agc_key.val(), &mut state.ctx) {
                 continue;
             }

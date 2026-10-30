@@ -17,7 +17,7 @@ mod test_utils;
 
 use agc_core::context::AlignmentCommand;
 use agc_core::display::verb_noun::{
-    KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_7, KEY_ENTER, KEY_NOUN, KEY_PRO, KEY_VERB,
+    KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_7, KEY_ENTER, KEY_PRO, KEY_VERB,
 };
 
 const SCENARIO: &str = "docs/scenarios/leo_circ.scenario";
@@ -97,34 +97,28 @@ fn uc1_thetad_via_n22() {
         ],
     );
 
-    // V25+N22 Flash-Modus: Werte als Noun-Eingaben (je 1-stellig für den Test)
-    // Gemäß sim_loop.rs NounSet-Arm: Wert landet in ctx.load_state.r1/r2/r3
-    // Wichtig: Noun-Eingabe setzt Noun UM → danach ist Noun ≠ 22.
-    // Daher prüfen wir ctx.load_state.r1/r2/r3, nicht alignment_cmd.
+    // V25+N22 Flash-Modus: Ziffern direkt eingeben (kein N-Präfix nötig).
+    // process_v25_key akkumuliert die Werte in load_state.r1/r2/r3 und ruft
+    // nach dem dritten ENTER accept_load auf → alignment_cmd + Flash-Stop.
+    // Werte: R1=1, R2=2, R3=3 (je 1-stellig)
     test_utils::press_keys(
         &mut state,
         &[
-            KEY_NOUN, KEY_1, KEY_ENTER, // load_state.r1 = 1
-            KEY_NOUN, KEY_2, KEY_ENTER, // load_state.r2 = 2
-            KEY_NOUN, KEY_3, KEY_ENTER, // load_state.r3 = 3
+            KEY_1, KEY_ENTER, // R1 = 1
+            KEY_2, KEY_ENTER, // R2 = 2
+            KEY_3, KEY_ENTER, // R3 = 3 → accept_load → CoarseAlign + Flash aus
         ],
     );
 
-    // Lade-Register müssen die eingetippten Werte halten
+    // accept_load muss CoarseAlign gesetzt und Flash gestoppt haben
     assert_eq!(
-        state.ctx.load_state.r1, 1,
-        "load_state.r1 nach N22-Eingabe = 1 erwartet, got {}",
-        state.ctx.load_state.r1
+        state.ctx.guidance.alignment_cmd,
+        Some(AlignmentCommand::CoarseAlign),
+        "alignment_cmd muss nach Dateneingabe CoarseAlign sein"
     );
-    assert_eq!(
-        state.ctx.load_state.r2, 2,
-        "load_state.r2 nach N22-Eingabe = 2 erwartet, got {}",
-        state.ctx.load_state.r2
-    );
-    assert_eq!(
-        state.ctx.load_state.r3, 3,
-        "load_state.r3 nach N22-Eingabe = 3 erwartet, got {}",
-        state.ctx.load_state.r3
+    assert!(
+        !state.ctx.display.flash_state,
+        "Flash muss nach dem dritten ENTER gestoppt sein"
     );
 }
 

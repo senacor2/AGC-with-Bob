@@ -52,22 +52,25 @@ cargo run -p agc-sim -- --scenario docs/scenarios/leo_circ.scenario
 
 ### Schritt 3: Ziel-Gimbal-Winkel eingeben (N22, Einheit 0.01°)
 
-**Eingabe**: Drei Werte (OGA, MGA, IGA) als NOUN-Eingabe
+**Eingabe**: Drei Werte (OGA, MGA, IGA) direkt als Zifferneingabe
 
-Beispiel: OGA = 10.00°, MGA = 20.00°, IGA = 30.00°  
+Beispiel: OGA = 10.00°, MGA = 20.00°, IGA = 30.00°
 (als Centideg: 1000, 2000, 3000)
 
 Tasteneingabe:
 ```
-N 1 0 0 0 E   ← OGA = 1000 centideg
-N 2 0 0 0 E   ← MGA = 2000 centideg
-N 3 0 0 0 E   ← IGA = 3000 centideg
+1 0 0 0 E   ← OGA = 1000 centideg
+2 0 0 0 E   ← MGA = 2000 centideg
+3 0 0 0 E   ← IGA = 3000 centideg
 ```
 
-Dann bestätigen mit **PRO** (`P` oder `V33E`):
+> **Hinweis**: Kein vorangestelltes **N** nötig. Während das V/N-Feld blinkt und
+> V25 N22 angezeigt wird, werden Ziffern direkt als Datenwert akkumuliert —
+> genau wie beim echten DSKY-Dateneingabe-Automaten (ENTPAS/STOREDAT).
+> Nach dem dritten ENTER erlischt der Flash automatisch.
 
 **Erwartet**:
-- Flash erlischt
+- Flash erlischt nach dem dritten ENTER (IGA)
 - `alignment_cmd = CoarseAlign` intern gesetzt
 
 ---
