@@ -219,6 +219,61 @@ impl Waitlist {
             Some(self.time_to_first)
         }
     }
+
+    /// Entfernt alle wartenden Tasks, deren Funktionszeiger `task_fn` entspricht.
+    ///
+    /// Wird verwendet, um einen laufenden Monitor-Task (V16) zu stoppen, wenn
+    /// eine einmalige Anzeige (V06) dispatcht wird.
+    ///
+    /// Gibt die Anzahl der entfernten Einträge zurück.
+    pub fn cancel_fn(&mut self, task_fn: fn(&mut crate::context::AgcContext)) -> usize {
+        let mut removed = 0;
+        let mut i = 0;
+        while i < self.count {
+            if self.tasks[i]
+                .task_fn
+                .is_some_and(|f| core::ptr::fn_addr_eq(f, task_fn))
+            {
+                // Absoluten Zeitpunkt dieses Tasks berechnen
+                let abs_this = if i == 0 {
+                    self.time_to_first
+                } else {
+                    let mut t = self.time_to_first;
+                    for k in 0..i {
+                        t = t.saturating_add(self.delays[k]);
+                    }
+                    t
+                };
+
+                // Delta auf Nachfolger übertragen, damit dessen absolute Zeit erhalten bleibt
+                if i + 1 < self.count {
+                    let delta_to_next = self.delays[i];
+                    if i == 0 {
+                        // Nächster Task erhält die absolute Zeit des entfernten
+                        self.time_to_first = abs_this.saturating_add(delta_to_next);
+                    } else {
+                        // Delta des Vorgängers auf Nachfolger addieren
+                        self.delays[i - 1] = self.delays[i - 1].saturating_add(delta_to_next);
+                    }
+                }
+
+                // Eintrag aus Liste entfernen (nach links schieben)
+                self.count -= 1;
+                for j in i..self.count {
+                    self.tasks[j] = self.tasks[j + 1];
+                    self.delays[j] = self.delays[j + 1];
+                }
+                self.tasks[self.count] = WaitEntry::empty();
+                self.delays[self.count] = 0;
+
+                removed += 1;
+                // i nicht erhöhen — nächster Task liegt jetzt an Position i
+            } else {
+                i += 1;
+            }
+        }
+        removed
+    }
 }
 
 impl Default for Waitlist {

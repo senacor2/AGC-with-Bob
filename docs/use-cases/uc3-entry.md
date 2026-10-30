@@ -141,10 +141,13 @@ Roll-Kommandos steuern Lift: ROLLC in N69 R1, DL in N69 R2.
 
 ---
 
-### Schritt 8: Position prüfen (V06 N67)
+### Schritt 8: Position einmalig anzeigen (V06 N67)
 
 **Eingabe**: `V06N67E`
 = VERB → 0 → 6 → NOUN → 6 → 7 → ENTER
+
+Einmalige Anzeige (kein Monitor-Modus): Die Werte werden **nicht** laufend aktualisiert.
+Für kontinuierliche Aktualisierung → `V16N67E`.
 
 | Register | Noun | Bedeutung | Einheit |
 |----------|------|-----------|---------|

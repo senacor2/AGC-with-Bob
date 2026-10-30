@@ -484,6 +484,11 @@ impl VerbDispatcher {
             // V06: Einmalige Dezimalanzeige
             // AGC source: PINBALL_GAME__BUTTONS_AND_LIGHTS.agc, DECDSP label.
             VerbAction::DisplayOnce => {
+                // Laufenden V16-Monitor-Task stoppen — sonst würde der bereits
+                // eingetragene monitor_task das Display weiterhin zyklisch
+                // überschreiben trotz einmaliger V06-Anzeige.
+                ctx.waitlist.cancel_fn(monitor_task);
+
                 // Blinken stoppen (kein VERB/NOUN-Flash bei einmaliger Anzeige)
                 ctx.display.flash_state = false;
                 ctx.display.flash_counter = 0;
@@ -1343,6 +1348,60 @@ mod tests {
             ctx.waitlist.time_to_next(),
             Some(100),
             "Nächste Monitor-Aktualisierung in 100 cs"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: V16 dann V06 — Monitor muss nach V06 stoppen
+    // -----------------------------------------------------------------------
+
+    /// Regressionstest: V16/N67 starten, dann V06/N67 eingeben.
+    ///
+    /// Nach V06 darf kein Monitor-Task mehr in der Waitlist stehen und das
+    /// Display darf sich nach weiteren Ticks nicht mehr ändern.
+    #[test]
+    fn v06_after_v16_stops_monitor() {
+        use crate::executive::waitlist::tick_with_ctx;
+        use crate::guidance::p61_67::P67State;
+
+        let mut ctx = AgcContext::default();
+
+        // P67-State vorbelegen (damit N67 etwas liefert statt Blank).
+        // xrngerr_m ≠ 0 → RTOGO ≠ 0 → R1 ≠ Decimal(0), also erkennbar verschieden von Blank.
+        let mut p67 = P67State::new();
+        p67.xrngerr_m = 150_000.0;
+        ctx.guidance.p67 = Some(p67);
+        // Splashdown-Koordinaten für R2/R3
+        use core::f64::consts::PI;
+        ctx.guidance.splashdown_lat = 13.54_f64 * PI / 180.0;
+        ctx.guidance.splashdown_lon = -169.42_f64 * PI / 180.0;
+
+        // V16/N67 dispatchen — Monitor-Task wird eingetragen
+        VerbDispatcher::dispatch(verb(16), noun(67), &mut ctx);
+        assert_eq!(
+            ctx.waitlist.count(),
+            1,
+            "Monitor-Task muss eingetragen sein"
+        );
+
+        // V06/N67 dispatchen — Monitor-Task muss entfernt werden
+        VerbDispatcher::dispatch(verb(6), noun(67), &mut ctx);
+        assert_eq!(
+            ctx.waitlist.count(),
+            0,
+            "V06 muss den V16-Monitor-Task aus der Waitlist entfernen"
+        );
+
+        // Display-Wert nach V06 merken
+        let r1_after_v06 = ctx.display.r1;
+
+        // Mehrere Ticks — das Display darf sich nicht mehr ändern
+        for _ in 0..200 {
+            tick_with_ctx(&mut ctx, 1);
+        }
+        assert_eq!(
+            ctx.display.r1, r1_after_v06,
+            "Nach V06 darf kein Monitor-Task mehr das Display aktualisieren"
         );
     }
 }
