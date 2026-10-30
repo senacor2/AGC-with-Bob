@@ -101,7 +101,13 @@ pub fn axis_command(error: f64, rate: f64, deadband: f64) -> AxisCmd {
 ///
 /// AGC source: `Comanche055/JET_SELECTION_LOGIC.agc`, PWORD / YWORD / ZWORD
 /// Tabellen und Ausgabe via CHAN 5 / CHAN 6.
-pub fn select_jets<R: RcsHal>(pitch: AxisCmd, yaw: AxisCmd, roll: AxisCmd, rcs: &mut R) {
+/// Berechnet RCS-Jet-Bits ohne HAL-Zugriff.
+///
+/// Gibt `(jets_ab, jets_cd)` zurück — für den Waitlist-Task in `agc-core`,
+/// der keine `&mut RcsHal`-Referenz halten kann.
+///
+/// AGC source: `Comanche055/JET_SELECTION_LOGIC.agc`, PWORD / YWORD / ZWORD.
+pub fn select_jets_raw(pitch: AxisCmd, yaw: AxisCmd, roll: AxisCmd) -> (u8, u8) {
     let mut ab: u8 = 0;
     let mut cd: u8 = 0;
 
@@ -141,6 +147,24 @@ pub fn select_jets<R: RcsHal>(pitch: AxisCmd, yaw: AxisCmd, roll: AxisCmd, rcs: 
         AxisCmd::None => {}
     }
 
+    (ab, cd)
+}
+
+/// Wählt RCS-Jets basierend auf Pitch-, Yaw- und Roll-Befehlen aus und schreibt
+/// sie via [`RcsHal`].
+///
+/// Mehrere gleichzeitige Achsbefehle werden durch bitweises OR kombiniert.
+///
+/// # Parameter
+/// - `pitch`:  [`AxisCmd`] für die Pitch-Achse.
+/// - `yaw`:    [`AxisCmd`] für die Yaw-Achse.
+/// - `roll`:   [`AxisCmd`] für die Roll-Achse.
+/// - `rcs`:    RCS HAL für die Ausgabe.
+///
+/// AGC source: `Comanche055/JET_SELECTION_LOGIC.agc`, PWORD / YWORD / ZWORD
+/// Tabellen und Ausgabe via CHAN 5 / CHAN 6.
+pub fn select_jets<R: RcsHal>(pitch: AxisCmd, yaw: AxisCmd, roll: AxisCmd, rcs: &mut R) {
+    let (ab, cd) = select_jets_raw(pitch, yaw, roll);
     rcs.set_jets_ab(ab);
     rcs.set_jets_cd(cd);
 }

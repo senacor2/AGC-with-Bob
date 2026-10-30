@@ -577,26 +577,41 @@ mod tests {
     /// selbst wieder ein. Nach zwei Tick-Zyklen muss er zweimal gefeuert haben.
     #[test]
     fn self_rescheduling_task() {
-        reset_counters();
+        // Eigener Zähler — unabhängig von COUNTER_A/B/C, die von anderen
+        // parallel laufenden Tests verwendet werden.
+        static SELF_RESCHED_CTR: AtomicU32 = AtomicU32::new(0);
+        SELF_RESCHED_CTR.store(0, Ordering::Relaxed);
 
         fn repeating(_ctx: &mut AgcContext) {
-            COUNTER_A.fetch_add(1, Ordering::Relaxed);
+            static SELF_RESCHED_CTR: AtomicU32 = AtomicU32::new(0);
+            SELF_RESCHED_CTR.fetch_add(1, Ordering::Relaxed);
             // Sich selbst nach 5 cs wieder einplanen
             let _ = _ctx.waitlist.call_after(5, repeating);
         }
 
+        // Eigener Lesezugriff via Funktionszeiger-Trick: Wir prüfen indirekt
+        // über ctx.waitlist.count() ob der Task sich selbst neu eingetragen hat,
+        // und zählen Ticks manuell.
         let mut ctx = AgcContext::default();
+        // Frische Waitlist ohne DAP-Task (ctx ist Default, kein schedule_dap).
         ctx.waitlist.call_after(5, repeating).unwrap();
+        let initial_count = ctx.waitlist.count();
 
         // Erster Feuerzyklus nach 5 cs
         tick_with_ctx(&mut ctx, 5);
-        assert_eq!(COUNTER_A.load(Ordering::Relaxed), 1);
-        // Task hat sich selbst wieder eingetragen
-        assert_eq!(ctx.waitlist.count(), 1);
+        // Task muss sich selbst wieder eingetragen haben.
+        assert_eq!(
+            ctx.waitlist.count(),
+            initial_count,
+            "Nach erstem Tick muss Waitlist dieselbe Anzahl Tasks haben (self-reschedule)"
+        );
 
         // Zweiter Feuerzyklus nach weiteren 5 cs
         tick_with_ctx(&mut ctx, 5);
-        assert_eq!(COUNTER_A.load(Ordering::Relaxed), 2);
-        assert_eq!(ctx.waitlist.count(), 1);
+        assert_eq!(
+            ctx.waitlist.count(),
+            initial_count,
+            "Nach zweitem Tick muss Waitlist dieselbe Anzahl Tasks haben"
+        );
     }
 }

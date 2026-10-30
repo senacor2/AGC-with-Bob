@@ -79,22 +79,19 @@ impl Default for RcsDapState {
 // Öffentliche API
 // ---------------------------------------------------------------------------
 
-/// Liest aktuelle CDU-Gimbal-Winkel und aktualisiert Lagefehler.
+/// Liest aktuelle CDU-Gimbal-Winkel und aktualisiert Lagefehler (HAL-freie Variante).
 ///
-/// Gibt die Lagefehler [Pitch, Yaw, Roll] in Radiant zurück.
-/// Die Werte fließen anschließend in [`super::jet_select::select_jets`] ein.
+/// Gibt die Lagefehler `[Pitch, Yaw, Roll]` in Radiant zurück.
+/// CDU-Werte werden direkt übergeben statt über `ImuHal` gelesen — geeignet
+/// für den Waitlist-Task in `agc-core`.
 ///
 /// # Parameter
 /// - `state`: veränderlicher DAP-Zustand.
-/// - `imu`:   IMU HAL, liefert CDU-Gimbal-Winkel in AGC-Bits.
+/// - `cx/cy/cz`: CDU-Gimbalwinkel [OGA, MGA, IGA] in CDU-Bits.
 /// - `dt`:    Zeitschritt (T5PHASE-Abtastzeit), Sekunden.
 ///
-/// AGC source: `Comanche055/RCS-CSM_DIGITAL_AUTOPILOT.agc`,
-/// T5PHASE1 Abschnitt (RATEFILT/RATECOMP).
-pub fn rcs_dap_update<I: ImuHal>(state: &mut RcsDapState, imu: &mut I, dt: f64) -> [f64; 3] {
-    let cdus = imu.read_gimbal_angles();
-    let [cx, cy, cz] = cdus;
-
+/// AGC source: `Comanche055/RCS-CSM_DIGITAL_AUTOPILOT.agc`, T5PHASE1.
+pub fn rcs_dap_update_raw(state: &mut RcsDapState, cx: i16, cy: i16, cz: i16, dt: f64) -> [f64; 3] {
     // CDU-Differenz → Winkelinkremente (Körperachsen-Näherung)
     let dx = (cx.wrapping_sub(state.last_cdu_x)) as f64 * CDU_TO_RAD;
     let dy = (cy.wrapping_sub(state.last_cdu_y)) as f64 * CDU_TO_RAD;
@@ -132,6 +129,17 @@ pub fn rcs_dap_update<I: ImuHal>(state: &mut RcsDapState, imu: &mut I, dt: f64) 
     let _ = rate_z;
 
     [err_y, err_z, err_x] // [Pitch-Fehler, Yaw-Fehler, Roll-Fehler]
+}
+
+/// Liest aktuelle CDU-Gimbal-Winkel und aktualisiert Lagefehler (via `ImuHal`).
+///
+/// Wrapper um [`rcs_dap_update_raw`].
+///
+/// # AGC source
+/// `Comanche055/RCS-CSM_DIGITAL_AUTOPILOT.agc`, T5PHASE1 Abschnitt (RATEFILT/RATECOMP).
+pub fn rcs_dap_update<I: ImuHal>(state: &mut RcsDapState, imu: &mut I, dt: f64) -> [f64; 3] {
+    let [cx, cy, cz] = imu.read_gimbal_angles();
+    rcs_dap_update_raw(state, cx, cy, cz, dt)
 }
 
 /// Setzt den Referenz-Lagewinkel (Attitude-Hold reset).

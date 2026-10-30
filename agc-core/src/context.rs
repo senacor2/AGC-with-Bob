@@ -9,6 +9,7 @@
 //! `fn(&mut AgcContext)`.
 
 use crate::alarm::AlarmState;
+use crate::dap::DapContext;
 use crate::display::input::InputLoadState;
 use crate::display::verb_noun::DisplayState;
 use crate::executive::waitlist::Waitlist;
@@ -243,6 +244,15 @@ impl Default for GuidanceContext {
 pub struct AgcContext {
     /// DSKY-Anzeigestatus (VERBREG, NOUNREG, MODREG, R1–R3, Statuslichter).
     pub display: DisplayState,
+
+    /// Digitaler Autopilot — erasable-memory-Brücke (CDU-Eingabe, RCS-Ausgabe).
+    ///
+    /// Der Sim-Loop schreibt `dap.cdu_angles` vor dem Waitlist-Tick und liest
+    /// `dap.jets_ab` / `dap.jets_cd` danach.  Der DAP-Task läuft als sich
+    /// selbst wiederholender Waitlist-Task (10 cs = 100 ms).
+    ///
+    /// AGC source: `Comanche055/RCS-CSM_DIGITAL_AUTOPILOT.agc`, DAPDATR1/DAPDATR2.
+    pub dap: DapContext,
 
     /// Kooperativer Job-Scheduler (Executive).
     pub exec: Executive,

@@ -28,6 +28,7 @@ use ratatui::{
 
 use agc_core::alarm::AlarmState;
 use agc_core::context::AgcContext;
+use agc_core::dap::task::schedule_dap;
 use agc_core::display::dispatcher::VerbDispatcher;
 use agc_core::display::input::process_v25_key;
 use agc_core::display::verb_noun::{
@@ -37,13 +38,13 @@ use agc_core::display::verb_noun::{
 };
 use agc_core::guidance::p40_47::p40_step;
 use agc_core::guidance::reentry_control::reentry_tick;
-use agc_core::hal::DskyHal;
+use agc_core::hal::{DskyHal, ImuHal, RcsHal};
 use agc_core::navigation::orbital::MOON_THRESHOLD_M;
 use agc_physics::bodies::Body;
 use agc_physics::math::Vec3;
 use agc_physics::trajectory::{propagate, State, StepParams};
 
-use crate::hal::{SimDsky, SimImu};
+use crate::hal::{SimDsky, SimImu, SimRcs};
 use crate::tui::{
     alarm_display::AlarmDisplayWidget, dsky_widget::DskyWidget, state_display::StateDisplayWidget,
 };
@@ -76,6 +77,8 @@ pub struct SimState {
     pub dsky: SimDsky,
     /// Sim-IMU.
     pub imu: SimImu,
+    /// Sim-RCS — empfängt Jet-Befehle vom DAP-Waitlist-Task.
+    pub rcs: SimRcs,
     /// `true` wenn der AGC gerade rechnet (COMP ACTY).
     pub comp_acty: bool,
     /// Tick-Zähler (je 10 ms).
@@ -104,19 +107,23 @@ impl SimState {
         let position = Vec3::new(r, 0.0, 0.0);
         let velocity = Vec3::new(0.0, v_circ, 0.0);
 
-        Self {
+        let mut state = Self {
             ctx: AgcContext::default(),
             input_buf: InputBuffer::new(),
             alarms: AlarmState::new(),
             traj: State::new(position, velocity, 0.0),
             dsky: SimDsky::new(),
             imu: SimImu::new(),
+            rcs: SimRcs::new(),
             comp_acty: false,
             tick: 0,
             step_body: Body::Earth,
             scenario_input: None,
             status_msg: None,
-        }
+        };
+        // DAP-Task einmalig in die Waitlist eintragen.
+        schedule_dap(&mut state.ctx);
+        state
     }
 
     /// Lädt ein Szenario in den SimState.
@@ -134,6 +141,9 @@ impl SimState {
         self.ctx = AgcContext::default();
         self.input_buf = InputBuffer::new();
         self.alarms = AlarmState::new();
+        self.rcs = SimRcs::new();
+        // DAP-Task nach Szenario-Reset neu einplanen.
+        schedule_dap(&mut self.ctx);
 
         // Zentralkörper aus Bahnradius ableiten (Schwelle → agc_core::navigation::orbital).
         self.step_body = if data.position.magnitude() < MOON_THRESHOLD_M {
@@ -209,11 +219,23 @@ pub fn sim_tick(state: &mut SimState) {
     // --- T4RUPT ---
     t4rupt_tick(&mut state.ctx.display);
 
+    // --- CDU-Winkel in DAP-Erasable-Memory schreiben (vor Waitlist-Tick) ---
+    // Der DAP-Waitlist-Task liest ctx.dap.cdu_angles statt direkt auf ImuHal
+    // zuzugreifen (kein HAL-Zeiger im no_std-Task möglich).
+    // AGC source: Comanche055/IMU_CALIBRATION_AND_ALIGNMENT.agc, CDUTRIG.
+    state.ctx.dap.cdu_angles = state.imu.read_gimbal_angles();
+
     // --- Waitlist-Tick (T3RUPT-Äquivalent): fällige Tasks ausführen ---
     // V16-Monitor-Aktualisierung läuft jetzt als selbst-wiederholender Waitlist-Task
     // in agc-core (eingetragen im V16-Dispatcher-Handler via monitor_task).
+    // Der RCS-DAP-Task (alle 10 cs) schreibt ctx.dap.jets_ab/cd.
     // AGC source: Comanche055/WAITLIST.agc, T3RUPT routine.
     agc_core::executive::waitlist::tick_with_ctx(&mut state.ctx, 1);
+
+    // --- DAP-Ausgabe an SimRcs weiterleiten (nach Waitlist-Tick) ---
+    // AGC source: Comanche055/JET_SELECTION_LOGIC.agc, Kanal 005/006.
+    state.rcs.set_jets_ab(state.ctx.dap.jets_ab);
+    state.rcs.set_jets_cd(state.ctx.dap.jets_cd);
 
     write_to_dsky(&state.ctx.display, &mut state.dsky);
 
@@ -443,16 +465,20 @@ pub fn sim_tick(state: &mut SimState) {
 
     // --- Physik: RK4 ---
     // Zentralkörper aus state.step_body (wird beim Laden eines Szenarios gesetzt).
+    // thrust_accel aus aktiven RCS-Jets (DAP-Ausgabe / 28800 kg Nominalmasse).
+    let rcs_force = state.rcs.net_force_n();
+    let vehicle_mass = state.ctx.guidance.vehicle_mass_kg;
+    let thrust_accel = rcs_force.scale(1.0 / vehicle_mass);
     let params = StepParams {
         body: state.step_body,
-        thrust_accel: Vec3::ZERO,
+        thrust_accel,
         alpha_rad: 0.0,
         body_radius_m: state.step_body.radius(),
     };
     state.traj = propagate(state.traj, dt, 1, &params);
 
-    // --- IMU: spezifische Kraft ≈ 0 im freien Fall (Keplerbahn) ---
-    state.imu.update(Vec3::ZERO, dt);
+    // --- IMU: spezifische Kraft aus RCS-Jets (sonst 0 im freien Fall) ---
+    state.imu.update(thrust_accel, dt);
 
     // --- Alarm-Zustand zurückschreiben (Guidance-Alarme an TUI sichtbar machen) ---
     state.alarms = state.ctx.alarms;
