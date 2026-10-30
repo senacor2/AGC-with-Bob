@@ -235,22 +235,30 @@ fn uc3_n69_nonzero_after_ticks() {
 
     let mut state = test_utils::load_scenario_state(SCENARIO);
 
+    // Splashdown-Koordinaten setzen, damit target_range_m > 0 und roll_cmd_deg gesetzt wird
+    {
+        use agc_core::display::dispatcher::VerbDispatcher;
+        use agc_core::display::verb_noun::NounCode;
+        #[expect(
+            clippy::unwrap_used,
+            reason = "61 ist garantiert gültig als NounCode in Tests"
+        )]
+        let noun61 = NounCode::new(61).unwrap();
+        state.ctx.display.noun = noun61;
+        // Apollo-11 Splashdown: 13.54° N, -169.42° E
+        VerbDispatcher::accept_load(1354, -16942, 1, &mut state.ctx);
+    }
+
     // P64 starten
     test_utils::press_keys(
         &mut state,
         &[KEY_VERB, KEY_3, KEY_7, KEY_ENTER, KEY_6, KEY_4, KEY_ENTER],
     );
 
-    // Mehrere Ticks damit p64_step läuft und Drag/Roll berechnet
+    // Mehrere Ticks damit p64_step läuft und Roll-Befehl berechnet
     for _ in 0..10 {
         sim_tick(&mut state);
     }
-
-    // V06 N69 anzeigen (KEY_9 = roher Wert 9)
-    test_utils::press_keys(
-        &mut state,
-        &[KEY_VERB, KEY_0, KEY_6, KEY_NOUN, KEY_6, 9, KEY_ENTER],
-    );
 
     let p64 = state
         .ctx
@@ -258,14 +266,18 @@ fn uc3_n69_nonzero_after_ticks() {
         .p64
         .expect("p64 muss nach P64-Start gesetzt sein");
 
-    // Drag muss nach dem Entry-SV (v≈10 900 m/s, h≈122 km) > 0 sein
-    // — tatsächlich ist 122 km oberhalb der 120 km-Grenze, so dass Drag erst
-    // bei tieferem Einsinken einsetzt. drag_g_current bleibt 0 wenn zu hoch.
-    // Der Test prüft nur: Kein Absturz und phase ist gültig (2 oder 0).
+    // roll_cmd_deg muss nach dem Fix immer gesetzt sein (auch vor .05G):
+    // Der Reichweitenfehler zwischen 122 km Startposition und Splashdown
+    // ist positiv (Ziel weit entfernt) → Roll 90°.
+    assert_eq!(
+        p64.roll_cmd_deg, 90.0,
+        "roll_cmd_deg muss 90° sein (Ziel weit entfernt → Lift-down)"
+    );
+
+    // drag_g_current muss > 0 sein (Atmosphäre bei 122 km hat geringe, aber > 0 Dichte)
     assert!(
-        matches!(p64.phase, 0 | 2),
-        "p64.phase muss 0 oder 2 sein, ist {}",
-        p64.phase
+        p64.drag_g_current > 0.0,
+        "drag_g_current muss > 0 sein (h=122 km, v≈10 900 m/s)"
     );
 }
 

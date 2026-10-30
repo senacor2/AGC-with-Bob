@@ -416,12 +416,11 @@ pub fn p64_step(
             let d_g = drag_g(sv, body);
             state.drag_g_current = d_g;
 
-            if d_g < ENTRY_05G_THRESHOLD {
-                // Noch nicht tief genug — warten
-                return Some(true);
-            }
-
-            // Eintritts-Rollanpassung: Roll-Befehl aus Reichweiten-Fehler
+            // Eintritts-Rollanpassung: Roll-Befehl aus Reichweiten-Fehler.
+            // Wird immer berechnet (auch vor .05G), damit N69 R1 / N74 R1
+            // bereits während der Abstiegsphase einen sinnvollen Wert zeigen.
+            // AGC source: Comanche055/P61-P67.agc, DANZIG label — BETA-Berechnung
+            // erfolgt unabhängig vom .05G-Check.
             let r_mag = sv.position.magnitude();
             let alt = r_mag - body.r_equatorial();
             // Vereinfachte Reichweiten-Schätzung: alt × L/D × 2
@@ -430,6 +429,11 @@ pub fn p64_step(
             // Positiver Fehler → zu weit → Lift-down → Roll 90°
             // Negativer Fehler → zu nah → Lift-up → Roll 0°
             state.roll_cmd_deg = if range_err_m > 0.0 { 90.0 } else { 0.0 };
+
+            if d_g < ENTRY_05G_THRESHOLD {
+                // Noch nicht tief genug — warten (Roll-Befehl bleibt gesetzt)
+                return Some(true);
+            }
 
             // Übergang zu P65, wenn D > Q7
             if d_g > Q7_THRESHOLD {
