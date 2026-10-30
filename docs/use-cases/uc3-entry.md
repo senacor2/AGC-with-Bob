@@ -91,11 +91,15 @@ Tasteneingabe:
 = VERB → 0 → 6 → NOUN → 6 → 0 → ENTER
 
 **Erwartet**:
-| Register | Noun | Bedeutung | Einheit |
-|----------|------|-----------|---------|
-| R1 | N60 | GMAX (max. Belastung) | 0.01 m/s² |
-| R2 | N60 | VPRED (Geschwindigkeit bei Splashdown) | m/s |
-| R3 | N60 | GAMMAEI (Eintrittwinkel) | 0.01° |
+| Register | Noun | Bedeutung | Einheit | Referenzwert Apollo 11 |
+|----------|------|-----------|---------|------------------------|
+| R1 | N60 | GMAX (max. Bremslast) | 0.01 m/s² | ≈ 3 400 (= 3.4 g) |
+| R2 | N60 | VPRED (Inertialgeschwindigkeit bei EMS-Altitude 122 km) | m/s | ≈ 10 900 |
+| R3 | N60 | GAMMAEI (Eintrittswinkel) | 0.01° | ≈ −650 (= −6.5°) |
+
+> **Hinweis**: VPRED ist die Inertialgeschwindigkeit beim Eintritt in die Atmosphäre
+> (≈ 10 900 m/s für Apollo-11-Rückflug vom Mond) — nicht die Splashdown-Geschwindigkeit.
+> Diese Geschwindigkeit entspricht ~39 000 km/h und ist physikalisch korrekt.
 
 ---
 
