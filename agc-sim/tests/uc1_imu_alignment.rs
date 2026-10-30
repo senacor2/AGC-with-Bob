@@ -98,33 +98,33 @@ fn uc1_thetad_via_n22() {
     );
 
     // V25+N22 Flash-Modus: Werte als Noun-Eingaben (je 1-stellig für den Test)
-    // Gemäß sim_loop.rs NounSet-Arm: Wert landet in load_r1/r2/r3
+    // Gemäß sim_loop.rs NounSet-Arm: Wert landet in ctx.load_state.r1/r2/r3
     // Wichtig: Noun-Eingabe setzt Noun UM → danach ist Noun ≠ 22.
-    // Daher prüfen wir load_r1/r2/r3, nicht alignment_cmd.
+    // Daher prüfen wir ctx.load_state.r1/r2/r3, nicht alignment_cmd.
     test_utils::press_keys(
         &mut state,
         &[
-            KEY_NOUN, KEY_1, KEY_ENTER, // load_r1 = 1
-            KEY_NOUN, KEY_2, KEY_ENTER, // load_r2 = 2
-            KEY_NOUN, KEY_3, KEY_ENTER, // load_r3 = 3
+            KEY_NOUN, KEY_1, KEY_ENTER, // load_state.r1 = 1
+            KEY_NOUN, KEY_2, KEY_ENTER, // load_state.r2 = 2
+            KEY_NOUN, KEY_3, KEY_ENTER, // load_state.r3 = 3
         ],
     );
 
     // Lade-Register müssen die eingetippten Werte halten
     assert_eq!(
-        state.load_r1, 1,
-        "load_r1 nach N22-Eingabe = 1 erwartet, got {}",
-        state.load_r1
+        state.ctx.load_state.r1, 1,
+        "load_state.r1 nach N22-Eingabe = 1 erwartet, got {}",
+        state.ctx.load_state.r1
     );
     assert_eq!(
-        state.load_r2, 2,
-        "load_r2 nach N22-Eingabe = 2 erwartet, got {}",
-        state.load_r2
+        state.ctx.load_state.r2, 2,
+        "load_state.r2 nach N22-Eingabe = 2 erwartet, got {}",
+        state.ctx.load_state.r2
     );
     assert_eq!(
-        state.load_r3, 3,
-        "load_r3 nach N22-Eingabe = 3 erwartet, got {}",
-        state.load_r3
+        state.ctx.load_state.r3, 3,
+        "load_state.r3 nach N22-Eingabe = 3 erwartet, got {}",
+        state.ctx.load_state.r3
     );
 }
 

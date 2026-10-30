@@ -9,6 +9,7 @@
 //! `fn(&mut AgcContext)`.
 
 use crate::alarm::AlarmState;
+use crate::display::input::InputLoadState;
 use crate::display::verb_noun::DisplayState;
 use crate::executive::Executive;
 use crate::guidance::p30_37::P30Output;
@@ -266,4 +267,13 @@ pub struct AgcContext {
     ///
     /// AGC source: `Comanche055/ALARM_AND_ABORT.agc`.
     pub alarms: AlarmState,
+
+    /// Zustand des V25-Dateneingabe-Automaten (PINBALL ENTPAS/STOREDAT).
+    ///
+    /// Akkumuliert Ziffern, Vorzeichen und Register-Puffer für V25-Eingaben.
+    /// Wird von [`crate::display::input::process_v25_key`] verwaltet.
+    ///
+    /// AGC source: `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`,
+    /// ENTPAS / STOREDAT.
+    pub load_state: InputLoadState,
 }

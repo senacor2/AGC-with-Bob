@@ -9,6 +9,7 @@
 
 pub mod dispatcher;
 pub mod display_iface;
+pub mod input;
 pub mod noun_resolver;
 pub mod verb_noun;
 

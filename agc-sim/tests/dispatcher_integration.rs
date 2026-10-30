@@ -457,18 +457,18 @@ fn v37_two_step_starts_program_and_stops_flash() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 15: V25 N61 ENTER — accept_load liest aus load_r1/r2/r3, nicht Display
+// Test 15: V25 N61 ENTER — accept_load liest aus ctx.load_state, nicht Display
 // ---------------------------------------------------------------------------
 
 /// Stellt sicher dass `accept_load` beim ENTER-Tastendruck die Werte aus
-/// `SimState::load_r1/r2/r3` verwendet, nicht aus den Display-Registern.
+/// `ctx.load_state.r1/r2/r3` verwendet, nicht aus den Display-Registern.
 ///
 /// Aufbau:
 /// 1. V25 N61 ENTER — Lade-Verb aktiv, wartet auf Eingabe.
-/// 2. `state.load_r1 = 2525` (25.25°), `load_r2 = -800` (-8.00°), `load_r3 = 1`.
+/// 2. `ctx.load_state.r1 = 2525` (25.25°), `r2 = -800` (-8.00°), `r3 = 1`.
 /// 3. Display-Register werden auf einen abweichenden Wert gesetzt, um zu
 ///    beweisen dass `accept_load` den Eingabepuffer, nicht das Display, liest.
-/// 4. ENTER drücken → `accept_load` mit load_r1/r2/r3-Werten aufgerufen.
+/// 4. ENTER drücken → `accept_load` mit load_state.r1/r2/r3-Werten aufgerufen.
 /// 5. `guidance.splashdown_lat/lon` und `heads_up` prüfen.
 #[test]
 fn v25n61_enter_uses_load_buffer_not_display() {
@@ -482,9 +482,9 @@ fn v25n61_enter_uses_load_buffer_not_display() {
     press_keys(&mut state, &[KEY_NOUN, KEY_6, KEY_1, KEY_ENTER]);
 
     // Eingabepuffer mit Crew-Werten füllen
-    state.load_r1 = 2525; // 25.25°
-    state.load_r2 = -800; // -8.00°
-    state.load_r3 = 1; // heads-up
+    state.ctx.load_state.r1 = 2525; // 25.25°
+    state.ctx.load_state.r2 = -800; // -8.00°
+    state.ctx.load_state.r3 = 1; // heads-up
 
     // Display-Register absichtlich auf anderen Wert setzen —
     // wenn accept_load fälschlicherweise hieraus liest, schlägt der Test fehl.
@@ -492,7 +492,7 @@ fn v25n61_enter_uses_load_buffer_not_display() {
     state.ctx.display.r2 = DisplayRegister::Decimal(-9999);
     state.ctx.display.r3 = DisplayRegister::Decimal(0);
 
-    // ENTER drücken — löst accept_load(load_r1, load_r2, load_r3) aus
+    // ENTER drücken — löst accept_load(load_state.r1, load_state.r2, load_state.r3) aus
     press_keys(&mut state, &[KEY_ENTER]);
 
     // Erwartete Werte in rad (1 centideg = π/18000 rad)
@@ -516,15 +516,15 @@ fn v25n61_enter_uses_load_buffer_not_display() {
     );
 }
 
-/// Drei sequenzielle Zifferneingaben im V25-Flash-Modus befüllen load_r1/r2/r3
+/// Drei sequenzielle Zifferneingaben im V25-Flash-Modus befüllen ctx.load_state
 /// und rufen accept_load nach der dritten Eingabe auf.
 ///
 /// Ablauf:
 /// 1. `VERB 2 5 NOUN 6 1 ENTER` → V25 N61 aktiv, Flash an.
-/// 2. Erste Dateneingabe (Ziffern `1 1 ENTER`) → load_r1 = 11, load_reg_idx = 1.
-/// 3. Zweite Dateneingabe (Ziffern `2 2 ENTER`) → load_r2 = 22, load_reg_idx = 2.
-/// 4. Dritte Dateneingabe (Ziffern `3 3 ENTER`) → load_r3 = 33, accept_load →
-///    load_reg_idx = 0, Flash gestoppt (N61 accept_load stoppt Flash).
+/// 2. Erste Dateneingabe (Ziffern `1 1 ENTER`) → load_state.r1 = 11, reg_idx = 1.
+/// 3. Zweite Dateneingabe (Ziffern `2 2 ENTER`) → load_state.r2 = 22, reg_idx = 2.
+/// 4. Dritte Dateneingabe (Ziffern `3 3 ENTER`) → load_state.r3 = 33, accept_load →
+///    reg_idx = 0, Flash gestoppt (N61 accept_load stoppt Flash).
 #[test]
 fn v25n61_sequential_noun_entries_fill_load_registers() {
     let mut state = SimState::new();
@@ -539,22 +539,31 @@ fn v25n61_sequential_noun_entries_fill_load_registers() {
         state.ctx.display.flash_state,
         "Flash muss nach V25 N61 aktiv sein"
     );
-    assert_eq!(state.load_reg_idx, 0, "Index startet bei 0");
+    assert_eq!(state.ctx.load_state.reg_idx, 0, "Index startet bei 0");
 
     // Erste Dateneingabe: 11 (direkte Ziffern, kein NOUN)
     press_keys(&mut state, &[KEY_1, KEY_1, KEY_ENTER]);
-    assert_eq!(state.load_r1, 11, "load_r1 muss 11 sein");
-    assert_eq!(state.load_reg_idx, 1, "Index nach erster Eingabe = 1");
+    assert_eq!(state.ctx.load_state.r1, 11, "load_state.r1 muss 11 sein");
+    assert_eq!(
+        state.ctx.load_state.reg_idx, 1,
+        "Index nach erster Eingabe = 1"
+    );
 
     // Zweite Dateneingabe: 22
     press_keys(&mut state, &[KEY_2, KEY_2, KEY_ENTER]);
-    assert_eq!(state.load_r2, 22, "load_r2 muss 22 sein");
-    assert_eq!(state.load_reg_idx, 2, "Index nach zweiter Eingabe = 2");
+    assert_eq!(state.ctx.load_state.r2, 22, "load_state.r2 muss 22 sein");
+    assert_eq!(
+        state.ctx.load_state.reg_idx, 2,
+        "Index nach zweiter Eingabe = 2"
+    );
 
     // Dritte Dateneingabe: 33 → accept_load → Flash stopp, index = 0
     press_keys(&mut state, &[KEY_3, KEY_3, KEY_ENTER]);
-    assert_eq!(state.load_r3, 33, "load_r3 muss 33 sein");
-    assert_eq!(state.load_reg_idx, 0, "Index nach accept_load zurück auf 0");
+    assert_eq!(state.ctx.load_state.r3, 33, "load_state.r3 muss 33 sein");
+    assert_eq!(
+        state.ctx.load_state.reg_idx, 0,
+        "Index nach accept_load zurück auf 0"
+    );
 }
 
 // ---------------------------------------------------------------------------
