@@ -35,6 +35,7 @@ use agc_core::display::verb_noun::{
     KEY_KEY_REL, KEY_MINUS, KEY_NOUN, KEY_PLUS, KEY_PRO, KEY_RSET, KEY_VERB,
 };
 use agc_core::hal::DskyHal;
+use agc_core::navigation::orbital::MOON_THRESHOLD_M;
 use agc_physics::bodies::Body;
 use agc_physics::math::Vec3;
 use agc_physics::trajectory::{propagate, State, StepParams};
@@ -164,10 +165,7 @@ impl SimState {
         self.load_num_sign = 1;
         self.load_num_digits = 0;
 
-        // Zentralkörper aus Bahnradius ableiten.
-        // Schwelle 3 000 000 m: Mondorbit max. ~2 500 km Radius, Erdorbit min. ~6 371 km.
-        // Kein Überlappungsrisiko zwischen Mond- und Erdorbits.
-        const MOON_THRESHOLD_M: f64 = 3_000_000.0;
+        // Zentralkörper aus Bahnradius ableiten (Schwelle → agc_core::navigation::orbital).
         self.step_body = if data.position.magnitude() < MOON_THRESHOLD_M {
             Body::Moon
         } else {

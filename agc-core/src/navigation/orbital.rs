@@ -22,6 +22,23 @@ use crate::navigation::state_vector::StateVector;
 use crate::types::Vec3;
 
 // ---------------------------------------------------------------------------
+// Schwellwert Mond/Erde-Klassifikation
+// ---------------------------------------------------------------------------
+
+/// Mindestabstand vom Erdmittelpunkt in Metern, ab dem das Fahrzeug dem
+/// Gravitationsfeld des Mondes (statt der Erde) zugeordnet wird.
+///
+/// Der Wert 3 000 000 m (3 000 km) liegt zwischen Erdumlaufbahn (~400 km
+/// Höhe ≈ 6 778 km Radius) und dem Mond (~384 400 km Entfernung) und
+/// entspricht der im AGC verwendeten Unterscheidung zwischen Erde und Mond
+/// für Navigationsprogramme (P30, Physik-Integrator).
+///
+/// Einheit: Meter (m), Abstand vom Erdmittelpunkt.
+///
+/// AGC source: `Comanche055/P30,P37.agc`, TTOGO-Routine (Zentralkörper-Auswahl).
+pub const MOON_THRESHOLD_M: f64 = 3_000_000.0;
+
+// ---------------------------------------------------------------------------
 // CentralBody
 // ---------------------------------------------------------------------------
 

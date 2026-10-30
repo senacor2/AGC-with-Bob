@@ -23,7 +23,7 @@ use crate::display::noun_resolver;
 use crate::display::verb_noun::{start_flash, stop_flash, NounCode, VerbCode};
 use crate::guidance::p30_37::{p30_compute, P30Input};
 use crate::guidance::p40_47::{P40State, SPS_ISP, SPS_THRUST_N};
-use crate::navigation::orbital::CentralBody;
+use crate::navigation::orbital::{CentralBody, MOON_THRESHOLD_M};
 use crate::types::Vec3;
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,6 @@ fn program_p30(ctx: &mut AgcContext) {
     ctx.guidance.active_program = Some(30);
 
     // Zentralkörper aus aktuellem Positionsvektor ableiten.
-    const MOON_THRESHOLD_M: f64 = 3_000_000.0;
     let body = if ctx.current_sv.position.magnitude() < MOON_THRESHOLD_M {
         CentralBody::Moon
     } else {
