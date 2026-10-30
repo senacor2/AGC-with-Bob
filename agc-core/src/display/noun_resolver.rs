@@ -95,14 +95,6 @@ fn rad_to_centideg(rad: f64) -> i32 {
     deg_to_centideg(rad * RAD_TO_DEG)
 }
 
-/// Wandelt Sekunden in einen gerundeten `i32` um → für TGO/TFE-Anzeige.
-///
-/// Beispiel: 65.7 s → 66
-#[inline]
-fn s_to_display(s: f64) -> i32 {
-    libm::round(s) as i32
-}
-
 /// Wandelt Grad in tausendstel Grad (0.001°) um → für Gyro-Torquing-Anzeige (N93).
 ///
 /// Beispiel: 0.123° → 123
@@ -363,12 +355,13 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
         }
 
         // ------------------------------------------------------------------
-        // N63 — Entry Guidance Outputs: RTGO, VIO, TFE
+        // N63 — Entry Guidance Outputs: RTGO, VIO, TTE
         // P61 Guidance-Ausgaben nach Entry-Berechnung.
         // R1 = RTGO [km]   (Reichweite bis Splashdown ab EMS-Altitude)
         // R2 = VIO [m/s]   (Inertialgeschwindigkeit bei EMS-Altitude)
-        // R3 = TFE [s]     (geschätzte Zeit bis EMS-Altitude)
+        // R3 = TTE [MM:SS] (geschätzte Zeit bis EMS-Altitude, MMBSS-Format)
         //
+        // AGC source: PINBALL_NOUN_TABLES.agc, N63 → TTE, „MIN/SEC M/S".
         // AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N63.
         // ------------------------------------------------------------------
         63 => {
@@ -381,7 +374,7 @@ pub fn resolve(noun: NounCode, ctx: &AgcContext) -> [DisplayRegister; 3] {
             [
                 DisplayRegister::Decimal(m_to_km_display(d.rtgo_m)),
                 DisplayRegister::Decimal(mps_to_display(d.vio)),
-                DisplayRegister::Decimal(s_to_display(d.tte_s)),
+                DisplayRegister::MinSec(libm::round(d.tte_s).max(0.0) as u32),
             ]
         }
 
@@ -794,8 +787,11 @@ mod tests {
     // N63 — Entry Guidance Outputs
     // -----------------------------------------------------------------------
 
-    /// N63 mit bekannten P61-Display-Daten → RTGO, VIO, TFE korrekt.
+    /// N63 mit bekannten P61-Display-Daten → RTGO, VIO, TTE korrekt.
     ///
+    /// R3 muss `MinSec` liefern (MMBSS-Format), nicht `Decimal`.
+    ///
+    /// AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, N63 → TTE „MIN/SEC M/S".
     /// AGC source: ASSEMBLY_AND_OPERATION_INFORMATION.agc, N63.
     #[test]
     fn n63_resolves_from_p61_display() {
@@ -808,7 +804,7 @@ mod tests {
                 gamma_ei_deg: -6.5,
                 rtgo_m: 3_000_000.0, // 3000 km
                 vio: 10_500.0,       // 10 500 m/s
-                tte_s: 450.0,        // 450 s bis EMS-Alt
+                tte_s: 450.0,        // 450 s = 7 min 30 s → MinSec(450)
             }),
             lat_spl: 0.0,
             lng_spl: 0.0,
@@ -821,8 +817,8 @@ mod tests {
         assert_eq!(r1, DisplayRegister::Decimal(3000));
         // R2 = VIO in m/s: 10500
         assert_eq!(r2, DisplayRegister::Decimal(10_500));
-        // R3 = TFE in s: 450
-        assert_eq!(r3, DisplayRegister::Decimal(450));
+        // R3 = TTE als MinSec (MMBSS): 450 s = 07:30
+        assert_eq!(r3, DisplayRegister::MinSec(450));
     }
 
     /// N63 ohne P61-State → Blank.

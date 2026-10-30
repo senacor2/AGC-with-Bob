@@ -168,14 +168,19 @@ pub fn format_blank() -> (String, String, String) {
 
 /// Formatiert eine Zeitangabe in Sekunden als MM:SS-Segment-Display.
 ///
-/// Werte ≥ 3600 s werden auf 3599 s (59 Min 59 Sek) geklemmt.
-/// Das AGC-Format ist `XXBXX`: zwei Minuten-Stellen, ein Leerzeichen-Segment,
-/// zwei Sekunden-Stellen.  Die Vorzeichen-Stelle bleibt leer (kein `+`/`−`).
+/// Das AGC-DSKY-Format ist `MMBBSS` (MMBSS): zwei Minuten-Stellen,
+/// ein Leerzeichen-Segment, zwei Sekunden-Stellen.
+/// Die Vorzeichen-Stelle bleibt leer (kein `+`/`−`).
+///
+/// Werte > 5999 s (> 99 Min 59 Sek) werden auf 99:59 (5999 s) geklemmt,
+/// da das Display nur 2 Minuten-Stellen hat.
+///
+/// AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, Skalierungstyp „MIN/SEC M/S".
 ///
 /// Gibt `(top_line, mid_line, bot_line)` zurück — dieselbe Signatur wie
 /// [`format_decimal`] und [`format_blank`].
 pub fn format_min_sec(total_s: u32) -> (String, String, String) {
-    let clamped = total_s.min(3599);
+    let clamped = total_s.min(5999);
     let mins = clamped / 60;
     let secs = clamped % 60;
 
@@ -283,25 +288,39 @@ mod tests {
         let _ = (b0, _top, _mid, _bot);
     }
 
-    /// 3599 s → 59 min 59 sek (Grenzwert).
+    /// 3600 s → 60 min 00 sek (kein Klemmen mehr unter 3600 s).
+    #[test]
+    fn min_sec_3600() {
+        let (top60, mid60, bot60) = format_min_sec(3600);
+        // Darf NICHT identisch mit 3599 s sein.
+        let (top59, mid59, bot59) = format_min_sec(3599);
+        assert_ne!(
+            top60, top59,
+            "3600 s muss anders als 3599 s gerendert werden"
+        );
+        assert!(!mid60.is_empty());
+        assert!(!bot60.is_empty());
+        let _ = (mid59, bot59);
+    }
+
+    /// 5999 s → 99 min 59 sek (oberer Grenzwert).
     #[test]
     fn min_sec_max() {
-        let (top59, mid59, bot59) = format_min_sec(3599);
-        // Muss dieselbe Ausgabe wie bei 3599 ergeben (nicht abweichen).
-        assert!(!top59.is_empty());
-        assert!(!mid59.is_empty());
-        assert!(!bot59.is_empty());
+        let (top, mid, bot) = format_min_sec(5999);
+        assert!(!top.is_empty());
+        assert!(!mid.is_empty());
+        assert!(!bot.is_empty());
     }
 
-    /// 3600 s → geklemmt auf 3599 s → identisch mit 3599 s.
+    /// 6000 s → geklemmt auf 5999 s → identisch mit 5999 s.
     #[test]
     fn min_sec_clamped() {
-        assert_eq!(format_min_sec(3600), format_min_sec(3599));
+        assert_eq!(format_min_sec(6000), format_min_sec(5999));
     }
 
-    /// 10000 s → ebenfalls geklemmt auf 3599 s.
+    /// 10000 s → ebenfalls geklemmt auf 5999 s.
     #[test]
     fn min_sec_large_clamped() {
-        assert_eq!(format_min_sec(10_000), format_min_sec(3599));
+        assert_eq!(format_min_sec(10_000), format_min_sec(5999));
     }
 }

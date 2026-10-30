@@ -135,7 +135,11 @@ Tasteneingabe:
 |----------|-----------|---------|--------------------------|
 | R1 | RTGO (Reichweite bis Splashdown) | NM | — |
 | R2 | VIO (Geschwindigkeit bei EI) | m/s | ≈ 10 900 |
-| R3 | TTE (Zeit bis EI) | HH:MM | ≈ 01:00 |
+| R3 | TTE (Zeit bis EI) | MM:SS | ≈ 60:00 |
+
+> **Hinweis zu TTE**: Das AGC zeigt R3 im MMBSS-Format (Minuten:Sekunden), nicht als
+> Stunden:Minuten. 60 Minuten vor EI erscheint also `60 00`, nicht `01 00`.
+> Das DSKY-Register hat keine Stundenstelle; Werte über 99:59 werden auf 99:59 geklemmt.
 
 ---
 
