@@ -515,12 +515,14 @@ impl VerbDispatcher {
     /// aktiven V25 der ENTER-Tastendruck erfolgt. Interpretiert R1/R2/R3
     /// anhand des aktiven Nouns:
     ///
-    /// - **N22**: THETAD (Gimbal-Zielwinkel CoarseAlign) [0.01°] → `guidance.thetad` [rad]
+    /// - **N22**: THETAD (Gimbal-Zielwinkel CoarseAlign) [0.01°] → `guidance.thetad` [rad],
+    ///   setzt `guidance.alignment_cmd = CoarseAlign`.
     ///   AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, N22 (THETAD).
     /// - **N61**: LAT(SPL) [0.01°] → `guidance.splashdown_lat` [rad],
     ///   LNG(SPL) [0.01°] → `guidance.splashdown_lon` [rad],
     ///   HEADSUP  [±1]    → `guidance.heads_up` (1 = heads-up, −1 = heads-down)
-    /// - **N93**: DELTA GYRO ANGLES (FineAlign-Korrekturen) [0.001°] → `guidance.thetad` [rad]
+    /// - **N93**: DELTA GYRO ANGLES (FineAlign-Korrekturen) [0.001°] → `guidance.thetad` [rad],
+    ///   setzt `guidance.alignment_cmd = FineAlign`.
     ///   AGC source: `Comanche055/PINBALL_NOUN_TABLES.agc`, N93 (DELTA GYRO ANGLES).
     ///
     /// Stoppt VERB/NOUN-Blinken nach erfolgreicher Übernahme.
@@ -534,13 +536,16 @@ impl VerbDispatcher {
     /// # AGC source
     /// `Comanche055/PINBALL_GAME__BUTTONS_AND_LIGHTS.agc`, NVSBWAIT / CHARIN.
     /// `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, N61.
+    /// `Comanche055/EXTENDED_VERBS.agc`, VBCOARK / IMUFINEK.
     pub fn accept_load(r1: i32, r2: i32, r3: i32, ctx: &mut AgcContext) {
         let noun = ctx.display.noun;
 
         match noun.val() {
             // N22: THETAD — Gimbal-Zielwinkel für CoarseAlign
             // Einheit: 0.01° (Centideg) → rad; 0.01° = π/18 000 rad
+            // Setzt alignment_cmd = CoarseAlign (Crew-Bestätigung per ENTER/PRO).
             // AGC source: Comanche055/PINBALL_NOUN_TABLES.agc, N22 (THETAD).
+            // AGC source: Comanche055/EXTENDED_VERBS.agc, VBCOARK.
             22 => {
                 const CENTIDEG_TO_RAD: f64 = core::f64::consts::PI / 18_000.0;
                 ctx.guidance.thetad = [
@@ -548,6 +553,7 @@ impl VerbDispatcher {
                     r2 as f64 * CENTIDEG_TO_RAD,
                     r3 as f64 * CENTIDEG_TO_RAD,
                 ];
+                ctx.guidance.alignment_cmd = Some(crate::context::AlignmentCommand::CoarseAlign);
                 stop_flash(&mut ctx.display);
             }
 
@@ -587,7 +593,9 @@ impl VerbDispatcher {
             // N93: DELTA GYRO ANGLES — Korrekturwinkel für FineAlign (IMU-Torquing)
             // Einheit: 0.001° (Millideg) → rad; 0.001° = π/180 000 rad
             // Der Simulator nutzt thetad als Proxy (keine separate Gyro-Torque-Variable).
+            // Setzt alignment_cmd = FineAlign (Crew-Bestätigung per ENTER/PRO).
             // AGC source: Comanche055/PINBALL_NOUN_TABLES.agc, N93 (DELTA GYRO ANGLES).
+            // AGC source: Comanche055/EXTENDED_VERBS.agc, IMUFINEK.
             93 => {
                 const MILLIDEG_TO_RAD: f64 = core::f64::consts::PI / 180_000.0;
                 ctx.guidance.thetad = [
@@ -595,6 +603,7 @@ impl VerbDispatcher {
                     r2 as f64 * MILLIDEG_TO_RAD,
                     r3 as f64 * MILLIDEG_TO_RAD,
                 ];
+                ctx.guidance.alignment_cmd = Some(crate::context::AlignmentCommand::FineAlign);
                 stop_flash(&mut ctx.display);
             }
 
@@ -1094,6 +1103,66 @@ mod tests {
         assert_eq!(
             ctx.guidance.alignment_cmd, None,
             "alignment_cmd muss None sein (Prompt noch aktiv)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 17: accept_load N22 → alignment_cmd = CoarseAlign
+    // -----------------------------------------------------------------------
+
+    /// `accept_load` mit N22 setzt `alignment_cmd = CoarseAlign` und stoppt Flash.
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, VBCOARK.
+    #[test]
+    fn accept_load_n22_sets_coarse_align() {
+        let mut ctx = AgcContext::default();
+
+        // V25/N22-Prompt simulieren (wie nach V41 ENTER)
+        ctx.display.verb = verb(25);
+        ctx.display.noun = noun(22);
+        ctx.display.flash_state = true;
+        ctx.display.lights.verb_noun_flash = true;
+
+        VerbDispatcher::accept_load(900, 0, 0, &mut ctx);
+
+        assert_eq!(
+            ctx.guidance.alignment_cmd,
+            Some(crate::context::AlignmentCommand::CoarseAlign),
+            "accept_load N22 muss alignment_cmd = CoarseAlign setzen"
+        );
+        assert!(
+            !ctx.display.flash_state,
+            "accept_load N22 muss Flash stoppen"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 18: accept_load N93 → alignment_cmd = FineAlign
+    // -----------------------------------------------------------------------
+
+    /// `accept_load` mit N93 setzt `alignment_cmd = FineAlign` und stoppt Flash.
+    ///
+    /// AGC source: `Comanche055/EXTENDED_VERBS.agc`, IMUFINEK.
+    #[test]
+    fn accept_load_n93_sets_fine_align() {
+        let mut ctx = AgcContext::default();
+
+        // V25/N93-Prompt simulieren (wie nach V42 ENTER)
+        ctx.display.verb = verb(25);
+        ctx.display.noun = noun(93);
+        ctx.display.flash_state = true;
+        ctx.display.lights.verb_noun_flash = true;
+
+        VerbDispatcher::accept_load(100, 200, 300, &mut ctx);
+
+        assert_eq!(
+            ctx.guidance.alignment_cmd,
+            Some(crate::context::AlignmentCommand::FineAlign),
+            "accept_load N93 muss alignment_cmd = FineAlign setzen"
+        );
+        assert!(
+            !ctx.display.flash_state,
+            "accept_load N93 muss Flash stoppen"
         );
     }
 }
