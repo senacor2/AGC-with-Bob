@@ -1,0 +1,48 @@
+# AGC Scenario File — Trans-Earth Coast, EI − 60 min (Apollo-11-Referenz)
+#
+# Startzeitpunkt: 60 Minuten vor dem Entry Interface (EI).
+# Die Kapsel befindet sich auf der Trans-Earth-Coast-Bahn vom Mond zur Erde.
+# Apollo 11 ging direkt aus der Trans-Earth-Bahn in den Reentry —
+# kein Earth Orbit Insertion vor dem Wiedereintritt.
+#
+# Mit diesem Szenario wird P61 (Entry Preparation) korrekt gestartet:
+# N63 zeigt TTE ≈ 60:00 min; die Crew hat Zeit für Splashdown-Eingabe
+# und P62/P63 bevor das .05G-Ereignis automatisch P64 auslöst.
+#
+# ─── Bahnelemente (abgeleitet aus EI-Referenzwerten) ────────────────────────
+# Bahn:        Stark elliptische Rückkehrbahn vom Mond
+# Halbachse:   a ≈ 103 973 km
+# Exzentrizität e ≈ 0.938
+# Perigee:     ~36 km (tief in Atmosphäre — Wiedereintritt findet statt)
+# Apogee:      ~201 531 km ≈ Mondabstand
+#
+# ─── Zustand bei t = −3600 s (EI − 60 min) ─────────────────────────────────
+# Höhe:        17 126 km über WGS-84-Äquatorialradius (6 378 137 m)
+# |v|:         5 484.8 m/s (inertial, ECI)
+# γ_lok:       −56.9° (lokaler Flugpfadwinkel bei dieser Höhe)
+#              → kein EI-Winkel; γ_EI = −6.5° wird bei 122 km erreicht
+#
+# ─── Referenz EI-Bedingungen (t = 0) ────────────────────────────────────────
+# Höhe EI:     122 km = EMSALT (400 000 ft über Fischer-Ellipsoid, PAD-Loaded)
+# |v| EI:      10 900 m/s (inertial)
+# γ EI:        −6.5°
+#
+# ─── Herleitung ──────────────────────────────────────────────────────────────
+# Rückwärtspropagation via Kepler-Gleichung (analytisch, keine Numerik):
+#   1. Bahnelemente aus EI-Zustandsvektor (Vis-Viva + Drehimpuls)
+#   2. M(t_EI − 3600) = M(EI) + n × (−3600)
+#   3. Kepler-Gleichung lösen: M = E − e·sin(E)
+#   4. ECI-Koordinaten aus (r, θ) und Perigee-Richtung
+# Vorwärts-Check: +3600 s → Höhe = 122.000 km (Δ < 0.001 km)
+#
+# Quelle: "The Apollo Guidance Computer: Architecture and Operation",
+#   Kap. 4 "Command Module entry" (Book S. 341–358 · PDF S. 357–374)
+# AGC source: Comanche055/P61-P67.agc, EMSALT / TTE-Berechnung in S61.2
+
+pos_x_m  = -6756187.909
+pos_y_m  = -22512549.050
+pos_z_m  = 0.0
+vel_x_ms = 4189.3817
+vel_y_ms = 3540.1046
+vel_z_ms = 0.0
+time_s   = -3600.0

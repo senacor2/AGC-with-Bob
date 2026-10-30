@@ -1,6 +1,6 @@
 # UC-3: Entry (P61 → P64 → P67)
 
-**Szenario**: `docs/scenarios/entry_pre.scenario` (EI 122 km, Apollo-11-Referenz)  
+**Szenario**: `docs/scenarios/entry_p61.scenario` (Trans-Earth Coast, EI − 60 min, Apollo-11-Referenz)  
 **Integrationstest**: `agc-sim/tests/uc3_entry.rs`  
 **Programme**: P61 (Entry Preparation), P64 (Constant-Drag Phase), P67 (Terminal Phase)
 
@@ -8,33 +8,71 @@
 
 ## Überblick
 
-Der Wiedereintritts-Ablauf führt die Kapsel von der Entry-Interface-Höhe
-(122 km) durch die Atmosphäre bis zum Fallschirm-Einsatz:
+Apollo 11 ging **direkt aus der Trans-Earth-Coast-Bahn in den Wiedereintritt** —
+kein Earth Orbit Insertion vor dem Reentry. Die gesamte Rückreise vom Mond war
+eine einzige, ~59-stündige freie Keplerbahn mit dem Perigäum tief in der Atmosphäre.
 
-- **P61** bereitet den Eintritt vor: Splashdown-Zielkoordinaten und
-  Eintrittsparameter werden gesetzt.
-- **P64** steuert die Constant-Drag-Phase: Roll-Kommandos halten die
-  gewünschte Abbremsung.
-- **P67** verwaltet die Terminalphase: Zielrestabstand, aktuelle Position.
+Der Ablauf aus AGC-Sicht:
+
+| Programm | Start | Bedingung |
+|---|---|---|
+| **P61** | Manuell `V37E61E` | ~60 min vor EI, auf Trans-Earth-Bahn |
+| **P62** | Automatisch | Folgt auf P61 nach PROCEED |
+| **P63** | Automatisch | Folgt auf P62; hält Entry-Lage bis .05G |
+| **P64** | **Automatisch** | Wenn Bremsverzögerung ≥ 0.05 g (~90 s nach EI) |
+| **P67** | **Automatisch** | Wenn V < 27 000 fps (~8 230 m/s) beim .2g-Punkt |
+
+> **Wichtig**: Die Crew startet **nur P61** per V37. P62, P63, P64 und P67
+> werden vom AGC-internen SERVICER/REENTRY_CONTROL-Zyklus automatisch ausgelöst —
+> analog zu `NEWMODEX`-Aufrufen via RTB in `REENTRY_CONTROL.agc`.
+>
+> AGC source: `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/PREDICT3.
 
 ---
 
 ## Szenario laden
 
 ```sh
-cargo run -p agc-sim -- --scenario docs/scenarios/entry_pre.scenario
+cargo run -p agc-sim -- --scenario docs/scenarios/entry_p61.scenario
 ```
 
-Entry Interface Apollo 11:
-- Höhe: 122 km
-- Geschwindigkeit: ≈10 900 m/s (inertial)
-- Eintrittwinkel: γ = −6.5°
+Das Szenario startet **60 Minuten vor dem Entry Interface**:
+
+| Parameter | Wert |
+|---|---|
+| Höhe | 17 126 km |
+| Geschwindigkeit | 5 485 m/s (inertial) |
+| MET `time_s` | −3 600 s (= EI − 60 min) |
+| Bahn | Trans-Earth Coast (e = 0.938, a = 103 973 km) |
+
+> Der lokale Flugpfadwinkel beträgt hier −57° — das ist kein Fehler. Auf der
+> stark exzentrischen Rückkehrbahn vom Mond ist die Bahn nahe dem Perigäum
+> sehr steil. Der EI-Winkel γ = −6.5° wird erst kurz vor dem Entry Interface
+> bei 122 km Höhe erreicht, wenn die Atmosphäre abbremst.
+
+---
+
+## Timing-Übersicht (Apollo-11-Referenz)
+
+| Zeit | Ereignis | Eingabe |
+|---|---|---|
+| t = −3 600 s (EI − 60 min) | **Szenario-Start** | Simulator laden |
+| t ≈ −3 600 s | **P61 starten** | `V37E61E` |
+| t ≈ −3 600 s | Splashdown-Koords eingeben | `V25N61E` + Werte |
+| t ≈ −3 600 s | EMS-Daten prüfen | `V06N60E`, `V06N63E` |
+| t ≈ −600 s (EI − 10 min) | CM/SM-Separation (P62) | PRO-Taste |
+| **t = 0 (EI)** | Entry Interface | P63 aktiv, 122 km |
+| t ≈ +90 s | .05G → **P64 automatisch** | (kein Eingriff) |
+| t ≈ +10–15 min | V < 27 000 fps → **P67 automatisch** | (kein Eingriff) |
+| t ≈ +15 min | V ≤ 1 000 fps, Fallschirm | P67 fertig |
 
 ---
 
 ## Checkliste
 
 ### Schritt 1: P61 starten (Entry Preparation)
+
+Direkt nach dem Laden des Szenarios:
 
 **Eingabe**: `V37E61E`
 = VERB → 3 → 7 → ENTER → 6 → 1 → ENTER
@@ -71,56 +109,62 @@ Tasteneingabe:
 
 ---
 
-### Schritt 3: Splashdown-Koordinaten prüfen (V06 N61)
-
-**Eingabe**: `V06N61E`
-= VERB → 0 → 6 → NOUN → 6 → 1 → ENTER
-
-**Erwartet**:
-| Register | Noun | Wert | Einheit |
-|----------|------|------|---------|
-| R1 | N61 | LAT(SPL) | 0.01° |
-| R2 | N61 | LNG(SPL) | 0.01° |
-| R3 | N61 | HEADSUP | ±1 |
-
----
-
-### Schritt 4: Eintrittsparameter prüfen (V06 N60)
+### Schritt 3: Eintrittsparameter prüfen (V06 N60)
 
 **Eingabe**: `V06N60E`
-= VERB → 0 → 6 → NOUN → 6 → 0 → ENTER
 
 **Erwartet**:
-| Register | Noun | Bedeutung | Einheit | Referenzwert Apollo 11 |
-|----------|------|-----------|---------|------------------------|
-| R1 | N60 | GMAX (max. Bremslast) | 0.01 m/s² | ≈ 3 400 (= 3.4 g) |
-| R2 | N60 | VPRED (Inertialgeschwindigkeit bei EMS-Altitude 122 km) | m/s | ≈ 10 900 |
-| R3 | N60 | GAMMAEI (Eintrittswinkel) | 0.01° | ≈ −650 (= −6.5°) |
-
-> **Hinweis**: VPRED ist die Inertialgeschwindigkeit beim Eintritt in die Atmosphäre
-> (≈ 10 900 m/s für Apollo-11-Rückflug vom Mond) — nicht die Splashdown-Geschwindigkeit.
-> Diese Geschwindigkeit entspricht ~39 000 km/h und ist physikalisch korrekt.
+| Register | Bedeutung | Einheit | Referenzwert Apollo 11 |
+|----------|-----------|---------|------------------------|
+| R1 | GMAX (max. Bremslast) | 0.01 m/s² | ≈ 3 400 (= 3.4 g) |
+| R2 | VPRED (Geschwindigkeit bei EI) | m/s | ≈ 10 900 |
+| R3 | GAMMAEI (Eintrittswinkel) | 0.01° | ≈ −650 (= −6.5°) |
 
 ---
 
-### Schritt 5: P64 starten (Constant-Drag Phase)
+### Schritt 4: Zeit bis EI prüfen (V06 N63)
 
-**Eingabe**: `V37E64E`
-= VERB → 3 → 7 → ENTER → 6 → 4 → ENTER
+**Eingabe**: `V06N63E`
 
 **Erwartet**:
-| Anzeige | Wert |
-|---------|------|
-| PROG | 64 |
-
-Roll-Kommandos steuern Lift: ROLLC in N69 R1, DL in N69 R2.
+| Register | Bedeutung | Einheit | Wert beim Szenario-Start |
+|----------|-----------|---------|--------------------------|
+| R1 | RTGO (Reichweite bis Splashdown) | NM | — |
+| R2 | VIO (Geschwindigkeit bei EI) | m/s | ≈ 10 900 |
+| R3 | TTE (Zeit bis EI) | HH:MM | ≈ 01:00 |
 
 ---
 
-### Schritt 6: Roll-Kommandos prüfen (V06 N69)
+### Schritt 5: Warten auf P62/P63 (automatisch)
 
-**Eingabe**: `V06N69E`
-= VERB → 0 → 6 → NOUN → 6 → 9 → ENTER
+P62 und P63 folgen automatisch. PROG zeigt 62 dann 63.
+Die Simulation läuft weiter — kein V37-Eingriff nötig.
+
+**Beobachtung**: Nach ~55 Minuten Simulation-Zeit (bei EI − 5 min) zeigt PROG 63.
+
+---
+
+### Schritt 6: P64 beobachten — automatischer Eintritt bei .05G
+
+~90 Sekunden nach dem simulierten EI-Zeitpunkt (t = 0) schaltet PROG
+**automatisch auf 64**.
+
+Rollsteuerung beobachten:
+
+**Eingabe**: `V16N74E`
+= VERB → 1 → 6 → NOUN → 7 → 4 → ENTER
+
+| Register | Bedeutung | Einheit |
+|----------|-----------|---------|
+| R1 | ROLLC (Roll-Kommando) | 0.01° |
+| R2 | VI (Inertialgeschwindigkeit) | m/s |
+| R3 | D (Drag-Beschleunigung) | 0.01 g |
+
+---
+
+### Schritt 7: Roll-Kommandos im Monitor (V16 N69)
+
+**Eingabe**: `V16N69E`
 
 | Register | Bedeutung | Einheit |
 |----------|-----------|---------|
@@ -129,47 +173,39 @@ Roll-Kommandos steuern Lift: ROLLC in N69 R1, DL in N69 R2.
 
 ---
 
-### Schritt 7: P67 starten (Terminal Phase)
+### Schritt 8: P67 — Terminal Phase (automatisch)
 
-**Eingabe**: `V37E67E`
-= VERB → 3 → 7 → ENTER → 6 → 7 → ENTER
+P67 startet **automatisch** aus P64. PROG zeigt 67.
 
-**Erwartet**:
-| Anzeige | Wert |
-|---------|------|
-| PROG | 67 |
+**Eingabe**: `V16N67E`
 
----
-
-### Schritt 8: Position einmalig anzeigen (V06 N67)
-
-**Eingabe**: `V06N67E`
-= VERB → 0 → 6 → NOUN → 6 → 7 → ENTER
-
-Einmalige Anzeige (kein Monitor-Modus): Die Werte werden **nicht** laufend aktualisiert.
-Für kontinuierliche Aktualisierung → `V16N67E`.
-
-| Register | Noun | Bedeutung | Einheit |
-|----------|------|-----------|---------|
-| R1 | N67 | RTOGO (Restabstand zum Splashdown) | km |
-| R2 | N67 | LAT(ZIE) (Ziel-Breite) | 0.01° |
-| R3 | N67 | LON(ZIE) (Ziel-Länge) | 0.01° |
+| Register | Bedeutung | Einheit |
+|----------|-----------|---------|
+| R1 | RTOGO (Restabstand Splashdown) | km |
+| R2 | LAT(ZIE) (Ziel-Breite) | 0.01° |
+| R3 | LON(ZIE) (Ziel-Länge) | 0.01° |
 
 ---
 
 ### Schritt 9: Guidance-Fehler-Monitor (V16 N66)
 
 **Eingabe**: `V16N66E`
-= VERB → 1 → 6 → NOUN → 6 → 6 → ENTER
 
-Monitor-Modus: R1/R2/R3 werden 1× pro Sekunde aus P64/P67-Guidance-Daten
-aktualisiert (Guidance-Abweichungen, Lateral-Fehler).
+Monitor-Modus (1× pro Sekunde aktualisiert):
+
+| Register | Bedeutung | Einheit |
+|----------|-----------|---------|
+| R1 | ROLLC (Roll-Kommando) | 0.01° |
+| R2 | XRNGERR (Quer-Reichweitenfehler) | NM |
+| R3 | DNRNGERR (Längs-Reichweitenfehler) | NM |
 
 ---
 
 ## Quellen
 
-- `Comanche055/P61-P67.agc`, P61/P64/P67-Programme
-- `Comanche055/PINBALL_NOUN_TABLES.agc`, N60, N61, N66, N67, N69
+- `Comanche055/P61-P67.agc`, P61/P62/P63/P64/P67-Programme
+- `Comanche055/REENTRY_CONTROL.agc`, SCALEPOP/INITROLL/PREDICT3/P67.1
+- `Comanche055/SERVICER207.agc`, AVGEXIT/READACCS-Zyklus (alle 2 s)
+- `Comanche055/PINBALL_NOUN_TABLES.agc`, N60, N61, N63, N66, N67, N69, N74
 - `Comanche055/ASSEMBLY_AND_OPERATION_INFORMATION.agc`, N61
-- *The Apollo Guidance Computer*, Kap. 4 „Command Module entry" (PDF S. 357–374)
+- *The Apollo Guidance Computer*, Kap. 4 „Command Module entry" (Book S. 341–358 · PDF S. 357–374)

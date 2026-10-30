@@ -72,6 +72,7 @@ pub mod p38_39;
 pub mod p40_47;
 pub mod p51_53;
 pub mod p61_67;
+pub mod reentry_control;
 
 /// Gemeinsame Abstraktion für alle AGC-Guidance-Programme (P-Programme).
 ///

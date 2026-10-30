@@ -108,7 +108,14 @@ fn deriv(pos: Vec3, vel: Vec3, params: &StepParams) -> (Vec3, Vec3) {
     // Aerodynamische Beschleunigung
     let r = pos.magnitude();
     let altitude_m = r - params.body_radius_m;
-    let a_aero = if altitude_m < 120_000.0 && altitude_m > -1_000.0 {
+    // Aerodynamik ab 130 km aktivieren: EI (Entry Interface) liegt bei 122 km,
+    // die Kapsel muss beim Start des entry_pre-Szenarios sofort Drag spüren.
+    // 120 km war zu konservativ — bei 122 km Eintrittsradius (Fischer-Ellipsoid
+    // vs. mittlerer Erdradius) konnte die Kapsel starten ohne in den Aero-Bereich
+    // zu fallen.
+    //
+    // AGC source: Comanche055/P61-P67.agc, EMSALT = 400 000 ft = 121 920 m.
+    let a_aero = if altitude_m < 130_000.0 && altitude_m > -1_000.0 {
         aero_accel(pos, vel, altitude_m, params.alpha_rad)
     } else {
         Vec3::ZERO

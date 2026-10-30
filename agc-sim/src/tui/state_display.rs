@@ -72,9 +72,11 @@ fn render_state_panel(state: Option<&State>, area: Rect, buf: &mut Buffer) {
     );
     row += 1;
 
-    // Höhe über Erdoberfläche (genähert: Erdradius 6 371 km)
+    // Höhe über Erdoberfläche: Äquatorialradius WGS-84 (6 378.137 km).
+    // Konsistent mit agc-physics/bodies.rs R_EARTH und dem entry_pre-Szenario
+    // (das ebenfalls r_equatorial = 6 378 137 m verwendet).
     let r_norm = pos.magnitude();
-    let alt_km = (r_norm - 6_371_000.0) / 1000.0;
+    let alt_km = (r_norm - 6_378_137.0) / 1000.0;
     buf.set_string(x, row, "  ALT  ", label_sty);
     buf.set_string(x + 7, row, format!("{:>12.3}", alt_km), value_sty);
     buf.set_string(x + 20, row, " km", unit_sty);
