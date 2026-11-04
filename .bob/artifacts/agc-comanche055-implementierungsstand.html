@@ -1,0 +1,667 @@
+
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AGC Comanche055 — Implementierungsstand</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    background: #ffffff;
+    color: #1f2328;
+    padding: 32px 16px;
+  }
+  .page { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; }
+  h3 { font-size: 13px; font-weight: 600; color: #57606a; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Summary boxes */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+  .stat-box { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; }
+  .stat-value { font-size: 22px; font-weight: 700; color: #1f2328; }
+  .stat-label { font-size: 11px; color: #57606a; margin-top: 2px; }
+  .stat-box.green .stat-value { color: #1a7f37; }
+  .stat-box.yellow .stat-value { color: #9a6700; }
+  .stat-box.red .stat-value { color: #cf222e; }
+
+  /* Progress bar */
+  .progress-outer { background: #e5e7eb; border-radius: 4px; height: 10px; margin-bottom: 6px; overflow: hidden; }
+  .progress-inner { height: 10px; border-radius: 4px; background: #1a7f37; }
+  .progress-label { font-size: 12px; color: #57606a; text-align: right; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: #f7f8fa; }
+  th { text-align: left; padding: 7px 10px; font-weight: 600; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
+  td { padding: 6px 10px; border-bottom: 1px solid #f0f1f3; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-done    { background: #dafbe1; color: #116329; }
+  .badge-partial { background: #fff8c5; color: #7d4e00; }
+  .badge-open    { background: #ffebe9; color: #a40e26; }
+  .badge-infra   { background: #ddf4ff; color: #0550ae; }
+
+  .note { font-size: 12px; color: #57606a; }
+  .file-ref { font-family: monospace; font-size: 11px; color: #57606a; }
+
+  .section-note { background: #f7f8fa; border-left: 3px solid #3b82d4; padding: 8px 12px; margin: 12px 0; font-size: 12px; color: #57606a; }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>AGC Comanche055 — Implementierungsstand</h1>
+  <p class="subtitle">Abgleich aller Programme (P-Nummern), Navigationsroutinen und Infrastruktur gegen <code>agc-core</code> · Stand: November 2026</p>
+
+  
+  <div class="summary-grid">
+    <div class="stat-box green">
+      <div class="stat-value">16</div>
+      <div class="stat-label">Programme vollständig implementiert</div>
+    </div>
+    <div class="stat-box yellow">
+      <div class="stat-value">3</div>
+      <div class="stat-label">Teilweise implementiert</div>
+    </div>
+    <div class="stat-box red">
+      <div class="stat-value">7</div>
+      <div class="stat-label">Nicht implementiert</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value">26</div>
+      <div class="stat-label">Programme gesamt (Scope)</div>
+    </div>
+  </div>
+
+  <div class="progress-outer"><div class="progress-inner" style="width:62%"></div></div>
+  <div class="progress-label">Guidance-Programme: ~62 % vollständig</div>
+
+  
+  <h2>Guidance-Programme (P-Nummern)</h2>
+  <div class="section-note">Scope: Comanche055 (CM, Earth–Moon–Back). Lunar-Landing-Programme (LM/Luminary) sind explizit außerhalb des Scope.</div>
+
+  <h3>Erdorbit &amp; Überwachung</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P11</td>
+        <td>Earth Orbit Insertion Monitor</td>
+        <td class="file-ref">P11.agc</td>
+        <td class="file-ref">guidance/p11.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P21</td>
+        <td>Ground Tracking Determination</td>
+        <td class="file-ref">GROUND_TRACKING_…_P21.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Rendezvous-Navigation (P20–P25)</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P20</td>
+        <td>Rendezvous Navigation (VHF-Ranging / Kalman)</td>
+        <td class="file-ref">P20-P25.agc</td>
+        <td class="file-ref">guidance/p20_25.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P22</td>
+        <td>Landmark Tracking (MGA-Berechnung)</td>
+        <td class="file-ref">P20-P25.agc</td>
+        <td class="file-ref">guidance/p20_25.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P23</td>
+        <td>Cislunar Attitude Maneuver (V94)</td>
+        <td class="file-ref">P20-P25.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+      <tr>
+        <td>P24, P25</td>
+        <td>Rend. Track Data Processing, VHF-Mark</td>
+        <td class="file-ref">P20-P25.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>External ΔV &amp; Return</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P30</td>
+        <td>External ΔV Targeting (Apogee/Perigee + DELVSIN)</td>
+        <td class="file-ref">P30,P37.agc</td>
+        <td class="file-ref">guidance/p30_37.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P37 (nominal)</td>
+        <td>Return to Earth (Lambert)</td>
+        <td class="file-ref">P30,P37.agc</td>
+        <td class="file-ref">guidance/p30_37.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Rendezvous-Manöversequenz</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P32 / P72</td>
+        <td>CSI — Co-Elliptic Sequence Initiation</td>
+        <td class="file-ref">P32-P33,_P72-P73.agc</td>
+        <td class="file-ref">guidance/p32_33.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P33 / P73</td>
+        <td>CDH — Constant Delta Height</td>
+        <td class="file-ref">P32-P33,_P72-P73.agc</td>
+        <td class="file-ref">guidance/p32_33.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P34 / P74</td>
+        <td>TPI — Transfer Phase Initiation</td>
+        <td class="file-ref">P34-P35,_P74-P75.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+      <tr>
+        <td>P35 / P75</td>
+        <td>Rendezvous Mid-Course Maneuver</td>
+        <td class="file-ref">P34-P35,_P74-P75.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+      <tr>
+        <td>P38</td>
+        <td>Stable Orbit Insertion (SOI) — Lambert</td>
+        <td class="file-ref">STABLE_ORBIT_-_P38-P39.agc</td>
+        <td class="file-ref">guidance/p38_39.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P39</td>
+        <td>Midcourse Correction (SOI-Verfeinerung)</td>
+        <td class="file-ref">STABLE_ORBIT_-_P38-P39.agc</td>
+        <td class="file-ref">guidance/p38_39.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P76</td>
+        <td>Target Delta V (inkl. Uplink)</td>
+        <td class="file-ref">P76.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>SPS-Triebwerk &amp; Burn-Management (P40–P47)</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P40</td>
+        <td>SPS Burn (Ignition → Burn → Cutoff)</td>
+        <td class="file-ref">P40-P47.agc</td>
+        <td class="file-ref">guidance/p40_47.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P41</td>
+        <td>Gimbal Motor Test (Pitch/Yaw Sequenz)</td>
+        <td class="file-ref">P40-P47.agc</td>
+        <td class="file-ref">guidance/p40_47.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P47</td>
+        <td>Trim Maneuver (Post-Burn Δv-Restfehler)</td>
+        <td class="file-ref">P40-P47.agc</td>
+        <td class="file-ref">guidance/p40_47.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P42–P46</td>
+        <td>RCS Burn, TVC Checkout, etc.</td>
+        <td class="file-ref">P40-P47.agc</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>IMU-Alignment (P51–P53)</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P51</td>
+        <td>IMU Platform Alignment (TRIAD, PICAPAR, REFSMMAT)</td>
+        <td class="file-ref">P51-P53.agc</td>
+        <td class="file-ref">guidance/p51_53.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P52</td>
+        <td>IMU Fine Align (Sternmessung → REFSMMAT-Update)</td>
+        <td class="file-ref">P51-P53.agc</td>
+        <td class="file-ref">guidance/p51_53.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td>P53</td>
+        <td>IMU Realignment (Worst-Case Separation)</td>
+        <td class="file-ref">P51-P53.agc</td>
+        <td class="file-ref">guidance/p51_53.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-bottom:8px">P52/P53 — Berechnungskern (Stern-Messung, TRIAD) vorhanden; DSKY-Dialog-Sequenz (V62, V65-Marks) fehlt.</p>
+
+  <h3>Wiedereintritt (P61–P67)</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P61</td>
+        <td>Entry Preparation (GMAX, VPRED, GAMMAEI)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/p61_67.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P62</td>
+        <td>Entry Init (CMDAP Setup → Fall into P63)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/reentry_control.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P63</td>
+        <td>Pre-Entry Orientation (.05G-Sensing → P64)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/reentry_control.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P64</td>
+        <td>Constant-Drag Entry (Rollsteuerung, Q7-Check)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/p61_67.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P65</td>
+        <td>Up-Control Phase (Reichweite &lt; 25 NM)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/p61_67.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P66</td>
+        <td>Ballistic Trim Phase (D &lt; Q7)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/p61_67.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P67</td>
+        <td>Terminal Phase (v_rel ≤ 305 m/s)</td>
+        <td class="file-ref">P61-P67.agc</td>
+        <td class="file-ref">guidance/p61_67.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Notfall-Rückkehr</h3>
+  <table>
+    <thead><tr><th>Programm</th><th>Name</th><th>AGC-Quelldatei</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>P37 (Emergency)</td>
+        <td>Emergency Return to Earth (Lambert)</td>
+        <td class="file-ref">P37,P70.agc</td>
+        <td class="file-ref">guidance/p37_70.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td>P70</td>
+        <td>Emergency Return — Minimal Δv Variante</td>
+        <td class="file-ref">P37,P70.agc</td>
+        <td class="file-ref">guidance/p37_70.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  
+  <h2>Navigation &amp; Mathematik-Subroutinen</h2>
+  <table>
+    <thead><tr><th>AGC-Modul</th><th>Inhalt</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="file-ref">CONIC_SUBROUTINES.agc</td>
+        <td>Kepler-Propagation (Stumpff c₂/c₃, Newton), Lambert-Solver</td>
+        <td class="file-ref">navigation/conic.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">ORBITAL_INTEGRATION.agc</td>
+        <td>J2-Störterm, numerische Propagation (Runge-Kutta)</td>
+        <td class="file-ref">navigation/orbital.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">INTEGRATION_INITIALIZATION.agc</td>
+        <td>Bahnintegrations-Setup (INTEGRV, Zeitbasis)</td>
+        <td class="file-ref">navigation/state_vector.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">MEASUREMENT_INCORPORATION.agc</td>
+        <td>Skalarer Kalman-Filter (Zustandsvektor-Update)</td>
+        <td class="file-ref">navigation/measurement.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">INFLIGHT_ALIGNMENT_ROUTINES.agc</td>
+        <td>TRIAD-Algorithmus, PICAPAR-Check, CDU→rad</td>
+        <td class="file-ref">navigation/alignment.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">LUNAR_AND_SOLAR_EPHEMERIDES_SUBROUTINES.agc</td>
+        <td>Mond-/Sonnenposition (ekliptisch → ECI)</td>
+        <td class="file-ref">navigation/ephemeris.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">LATITUDE_LONGITUDE_SUBROUTINES.agc</td>
+        <td>Geographische Koordinaten ↔ ECI</td>
+        <td class="file-ref">navigation/lat_lon.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">TIME_OF_FREE_FALL.agc</td>
+        <td>TFF-Berechnung (Zeit bis Atmosphäre)</td>
+        <td class="file-ref">navigation/time_of_fall.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">POWERED_FLIGHT_SUBROUTINES.agc</td>
+        <td>Tsiolkovsky-Brennzeit, DVTOTAL-Tracking</td>
+        <td class="file-ref">navigation/powered_flight.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">STAR_TABLES.agc</td>
+        <td>Sternkatalog (37 Sterne, ECI-Referenzvektoren)</td>
+        <td class="file-ref">navigation/star_tables.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">PLANETARY_INERTIAL_ORIENTATION.agc</td>
+        <td>Erdrotation, ECI→ECEF-Transformation</td>
+        <td class="file-ref">— (in orbital.rs teilweise)</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  
+  <h2>Digitale Autopiloten (DAP)</h2>
+  <table>
+    <thead><tr><th>AGC-Modul</th><th>Inhalt</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="file-ref">TVCDAPS.agc, TVCINITIALIZE.agc,<br />TVCEXECUTIVE.agc, TVCMASSPROP.agc,<br />TVCRESTARTS.agc</td>
+        <td>TVC DAP (Pitch/Yaw PD+I-Regler, Gimbal-Befehle)</td>
+        <td class="file-ref">dap/tvc.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">TVCROLLDAP.agc</td>
+        <td>TVC Roll-DAP</td>
+        <td class="file-ref">dap/tvc_roll.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">KALCMANU_STEERING.agc</td>
+        <td>KALCMANU — quaternion-basierte Manöversteuerung</td>
+        <td class="file-ref">dap/kalcmanu.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">GIMBAL_LOCK_AVOIDANCE.agc</td>
+        <td>Gimbal-Lock-Erkennung (MGA-Prüfung)</td>
+        <td class="file-ref">dap/gimbal_lock.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">RCS-CSM_DIGITAL_AUTOPILOT.agc</td>
+        <td>RCS-DAP (Lage-Hold, Attitude-Error-Regler)</td>
+        <td class="file-ref">dap/rcs_dap.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">JET_SELECTION_LOGIC.agc</td>
+        <td>Jet-Auswahl (Quad A–D Befehlsbits)</td>
+        <td class="file-ref">dap/jet_select.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">AUTOMATIC_MANEUVERS.agc</td>
+        <td>Auto-Manöver-Supervisor</td>
+        <td class="file-ref">dap/task.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">CM_ENTRY_DIGITAL_AUTOPILOT.agc</td>
+        <td>CM Entry DAP (Rollsteuerung Atmosph.)</td>
+        <td class="file-ref">— (in p61_67.rs teilweise)</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">RCS-CSM_DAP_EXECUTIVE_PROGRAMS.agc</td>
+        <td>DAP Executive (Prioritäts-Dispatch)</td>
+        <td class="file-ref">dap/task.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  
+  <h2>Infrastruktur &amp; Systemprogramme</h2>
+  <table>
+    <thead><tr><th>AGC-Modul</th><th>Inhalt</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="file-ref">EXECUTIVE.agc</td>
+        <td>Kooperativer Job-Scheduler (Prioritäten, 8 Slots)</td>
+        <td class="file-ref">executive/mod.rs, job_table.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">WAITLIST.agc</td>
+        <td>Timer-basierte Task-Kette (Δt-Scheduling)</td>
+        <td class="file-ref">executive/waitlist.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">PHASE_TABLE_MAINTENANCE.agc,<br />RESTART_TABLES.agc, RESTARTS_ROUTINE.agc</td>
+        <td>GOJAM-Restart, Phase-Table (10 Gruppen)</td>
+        <td class="file-ref">restart/phase_table.rs, mod.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">ALARM_AND_ABORT.agc</td>
+        <td>Alarm-Raise, Alarm-Code-Registrierung</td>
+        <td class="file-ref">alarm/mod.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">PINBALL_GAME__BUTTONS_AND_LIGHTS.agc,<br />DISPLAY_INTERFACE_ROUTINES.agc</td>
+        <td>DSKY-Dispatcher, Verb/Noun-Handler, Anzeige</td>
+        <td class="file-ref">display/dispatcher.rs, display_iface.rs,<br />verb_noun.rs, input.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">PINBALL_NOUN_TABLES.agc</td>
+        <td>Noun-Resolver (N00–N99 → Register-Mapping)</td>
+        <td class="file-ref">display/noun_resolver.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">IMU_MODE_SWITCHING_ROUTINES.agc,<br />IMU_CALIBRATION_AND_ALIGNMENT.agc</td>
+        <td>IMU-HAL-Schnittstelle, Kalibrierung</td>
+        <td class="file-ref">hal/imu.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">DOWN-TELEMETRY_PROGRAM.agc,<br />DOWNLINK_LISTS.agc</td>
+        <td>Downlink-Telemetrie</td>
+        <td class="file-ref">hal/telemetry.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">S-BAND_ANTENNA_FOR_CM.agc</td>
+        <td>S-Band Antennen-Steuerung</td>
+        <td class="file-ref">— (hal/vhf_ranging.rs ähnlich)</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">SXTMARK.agc, EXTENDED_VERBS.agc</td>
+        <td>Sextanten-Mark, Extended Verbs V40–V99</td>
+        <td class="file-ref">display/verb_noun.rs (Verb-Dispatch)</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">FRESH_START_AND_RESTART.agc</td>
+        <td>Erasable-Init, Cold-Start-Sequenz</td>
+        <td class="file-ref">restart/mod.rs</td>
+        <td><span class="badge badge-done">✓ Vollständig</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">T4RUPT_PROGRAM.agc,<br />INTERRUPT_LEAD_INS.agc</td>
+        <td>T4RUPT-ISR (IMU-Lesen, CDU, DAP-Tick)</td>
+        <td class="file-ref">hal/imu.rs, dap/task.rs</td>
+        <td><span class="badge badge-partial">~ Teilweise</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">CSM_GEOMETRY.agc, ANGLFIND.agc</td>
+        <td>Körpergeometrie, Winkelberechnung Optics</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">R30.agc, R31.agc, R60,R62.agc</td>
+        <td>Orbit-Param-Display (R30), Rend.-Param (R31),<br />Preferred Attitude (R60/R62)</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+      <tr>
+        <td class="file-ref">UPDATE_PROGRAM.agc</td>
+        <td>Universal Update (V71/V72 Uplink)</td>
+        <td class="file-ref">—</td>
+        <td><span class="badge badge-open">✗ Fehlt</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  
+  <h2>Hardware Abstraction Layer (HAL)</h2>
+  <table>
+    <thead><tr><th>Schnittstelle</th><th>Rust-Datei</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>DSKY (Display + Keyboard)</td><td class="file-ref">hal/dsky.rs</td><td><span class="badge badge-done">✓ Vollständig</span></td></tr>
+      <tr><td>IMU (Sensorlesen, CDU-Winkel)</td><td class="file-ref">hal/imu.rs</td><td><span class="badge badge-done">✓ Vollständig</span></td></tr>
+      <tr><td>RCS (Jet-Ausgabe, Kanal 5/6)</td><td class="file-ref">hal/rcs.rs</td><td><span class="badge badge-done">✓ Vollständig</span></td></tr>
+      <tr><td>SPS (Triebwerk Ignition/Cutoff)</td><td class="file-ref">hal/sps.rs</td><td><span class="badge badge-done">✓ Vollständig</span></td></tr>
+      <tr><td>VHF-Ranging</td><td class="file-ref">hal/vhf_ranging.rs</td><td><span class="badge badge-done">✓ Vollständig</span></td></tr>
+      <tr><td>Telemetrie Downlink</td><td class="file-ref">hal/telemetry.rs</td><td><span class="badge badge-partial">~ Teilweise</span></td></tr>
+    </tbody>
+  </table>
+
+  
+  <h2>Wichtigste offene Lücken (priorisiert)</h2>
+  <table>
+    <thead><tr><th>Priorität</th><th>Fehlendes Modul</th><th>Begründung</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>1</strong></td>
+        <td>P34/P74 — TPI, P35/P75 — Rend. Midcourse</td>
+        <td>Fehlende Glieder der Rendezvous-Sequenz P32→P33→P34→P35. CSI/CDH vorhanden, aber Rendezvous endet am CDH.</td>
+      </tr>
+      <tr>
+        <td><strong>2</strong></td>
+        <td>R30 — Orbit Parameter Display, R31 — Rendezvous Parameter Display</td>
+        <td>Standard-Anzeige-Routinen, die von fast allen Manöverprogrammen vor dem Burn aufgerufen werden.</td>
+      </tr>
+      <tr>
+        <td><strong>3</strong></td>
+        <td>P52/P53 DSKY-Dialog</td>
+        <td>Berechnungskern läuft; fehlender V62/V65-Mark-Dialog macht es für End-to-End-Tests unvollständig.</td>
+      </tr>
+      <tr>
+        <td><strong>4</strong></td>
+        <td>P21 — Ground Tracking</td>
+        <td>Lat/Lon-Anzeige der Bahn — nützliches Navigationswerkzeug.</td>
+      </tr>
+      <tr>
+        <td><strong>5</strong></td>
+        <td>Update Program (V71/V72 Uplink)</td>
+        <td>Benötigt für MCC-Uplinks und vollständige Mission-Control-Simulation.</td>
+      </tr>
+      <tr>
+        <td><strong>6</strong></td>
+        <td>P42–P46 (RCS Burn, TVC Checkout)</td>
+        <td>Fehlende Nebenmanöver-Programme im P40-Block.</td>
+      </tr>
+      <tr>
+        <td><strong>7</strong></td>
+        <td>CSM_GEOMETRY / ANGLFIND / S-Band Antenna</td>
+        <td>Optics-Geometrie, Sextanten-Winkelberechnung und S-Band-Peaking — für physischen DSKY-Betrieb relevant.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>
